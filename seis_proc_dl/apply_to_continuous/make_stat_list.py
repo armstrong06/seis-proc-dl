@@ -23,7 +23,7 @@ ddir = args.ddir
 nstats = args.nstats
 
 if outfile is None and nstats is None:
-    outfile = f"station.list.{year}.{ncomps}C.{stat_type}H.txt"
+    outfile = f"station.list.{year}.{ncomps}C.{stat_type}.txt"
 elif nstats is not None:
     outfile = f"station.list.{year}.{ncomps}C.{stat_type}.{nstats}stats.txt"
 
