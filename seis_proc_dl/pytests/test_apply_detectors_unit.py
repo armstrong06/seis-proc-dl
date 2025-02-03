@@ -1874,6 +1874,22 @@ class TestDataLoader():
         assert os.path.basename(outfile) == 'WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.json'
         assert os.path.dirname(outfile) == examples_dir
         
+    def test_npts_not_unique(self):
+        dl = apply_detectors.DataLoader()
+        fileE = f'{examples_dir}/IW.IMW.00.BH1__2023-01-07T00:00:00.000000Z__2023-01-08T00:00:00.000000Z_100hz.mseed'
+        fileN = f'{examples_dir}/IW.IMW.00.BH2__2023-01-07T00:00:00.000000Z__2023-01-08T00:00:00.000000Z_100hz.mseed'
+        fileZ = f'{examples_dir}/IW.IMW.00.BHZ__2023-01-07T00:00:00.000000Z__2023-01-08T00:00:00.000000Z_100hz.mseed'
+        loaded = dl.load_3c_data(fileE, fileN, fileZ)
+        assert loaded
+
+    def test_endtimes_not_close(self):
+        dl = apply_detectors.DataLoader()
+        fileE = f'{examples_dir}/WY.YDD.01.HHE__2023-01-08T00:00:00.000000Z__2023-01-09T00:00:00.000000Z.mseed'
+        fileN = f'{examples_dir}/WY.YDD.01.HHN__2023-01-08T00:00:00.000000Z__2023-01-09T00:00:00.000000Z.mseed'
+        fileZ = f'{examples_dir}/WY.YDD.01.HHZ__2023-01-08T00:00:00.000000Z__2023-01-09T00:00:00.000000Z.mseed'
+        loaded = dl.load_3c_data(fileE, fileN, fileZ)
+        assert loaded
+
 class TestPhaseDetector():
     def test_class_init(self):
         model_file = f"{models_path}/oneCompPDetectorMEW_model_022.pt"
@@ -2922,7 +2938,7 @@ if __name__ == '__main__':
 
     from seis_proc_dl.pytests.test_apply_detectors_unit import TestDataLoader
     dltester = TestDataLoader()
-    dltester.test_load_3c_data_skip_day()
+    dltester.test_endtimes_not_close()
   
     # from seis_proc_dl.pytests.test_apply_detectors_unit import TestPhaseDetector
     # pdtester = TestPhaseDetector()

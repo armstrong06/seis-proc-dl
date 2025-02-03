@@ -1257,7 +1257,7 @@ class DataLoader():
         # Do this after filling the start gap so I can trim it using the number of 
         # samples instead of the trim function - which might result in +- 1 sample difference
         # Obspy handles endtime update after reducing the data 
-        if st[0].stats.endtime > desired_end:
+        if st[0].stats.endtime >= desired_end:
             st[0].data = st[0].data[0:int(expected_file_duration_s*sampling_rate)]
         assert st[0].stats.endtime <= desired_end, "The end of the trace goes into the next day"
 
