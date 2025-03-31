@@ -1635,6 +1635,8 @@ class TestDataLoader():
         dl = apply_detectors.DataLoader()
         vertical_proc = dl.process_1c_P(vertical[:, None], desired_sampling_rate=sampling_rate)
 
+        # Ben's processing function should not normalize the waveform
+        assert max(abs(vertical_proc)) > 0
         assert max(abs(vertical_proc[:, 0] - vertical_ref)) < 1.e-1
 
     def test_process_3c_P(self):
@@ -1668,6 +1670,10 @@ class TestDataLoader():
         east_proc = processed[:, 0]
         north_proc = processed[:, 1]
         vertical_proc = processed[:, 2]
+        # Ben's processing function should not normalize the waveform
+        assert max(abs(east_proc)) > 0
+        assert max(abs(north_proc)) > 0
+        assert max(abs(vertical_proc)) > 0
         assert max(abs(vertical_proc - vertical_ref)) < 1.e-1
         assert max(abs(north_proc - north_ref)) < 1.e-1
         assert max(abs(east_proc - east_ref)) < 1.e-1
@@ -1704,6 +1710,10 @@ class TestDataLoader():
         east_proc = processed[:, 0]
         north_proc = processed[:, 1]
         vertical_proc = processed[:, 2]
+        # Ben's processing function should not normalize the waveform
+        assert max(abs(east_proc)) > 0
+        assert max(abs(north_proc)) > 0
+        assert max(abs(vertical_proc)) > 0
         assert max(abs(vertical_proc - vertical_ref)) < 1.e-1
         assert max(abs(north_proc - north_ref)) < 1.e-1
         assert max(abs(east_proc - east_ref)) < 1.e-1
@@ -2938,7 +2948,7 @@ if __name__ == '__main__':
 
     from seis_proc_dl.pytests.test_apply_detectors_unit import TestDataLoader
     dltester = TestDataLoader()
-    dltester.test_endtimes_not_close()
+    dltester.test_process_1c_P()
   
     # from seis_proc_dl.pytests.test_apply_detectors_unit import TestPhaseDetector
     # pdtester = TestPhaseDetector()
