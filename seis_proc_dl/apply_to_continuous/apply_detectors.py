@@ -353,6 +353,7 @@ class ApplyDetector:
         )
 
     def get_station_dates(self, year, stat, chan):
+        # TODO:db Update this to check the database for a station first, then read the xml file and add to the db
         """Read in station xml files and get the start and end dates for the appropriate channels.
 
         Args:
@@ -502,6 +503,59 @@ class ApplyDetector:
         with open(os.path.join(outdir, filename), "a") as f:
             for missing_date in dates:
                 f.write(f"{missing_date}\n")
+
+    @staticmethod
+    def get_detections_from_post_probs(
+        Y, window_size=100, thresh=0.1, end_thresh_diff=0.05
+    ):
+        """
+        Find potential phase arrivals in the probability time-series output from the UNet given a minimum threshold value.
+        Chooses window to look for detection based on when the proba goes above thresh and then below again
+        :param Y: Probability time series
+        :param window_size: step size for sliding window
+        :param thresh: minimum probability threshold to record picks
+        :param min_boxcar_width: approx. minimum width of a boxcar detection allowed
+        :return: list of the samples in Y with an expected phase arrival (given thresh)
+        """
+        i1 = 0
+        # picks = []
+        # proba_values = []
+        # widths = []
+        detections = []
+        end_thresh = thresh - end_thresh_diff
+        while i1 < Y.shape[0]:
+            i2 = i1 + np.min([(Y.shape[0] - i1), window_size])
+            if np.any(Y[i1:i2] >= thresh):
+                # find first ind in window above thresh (start looking for max proba)
+                start_win = i1 + np.where(Y[i1:i2] >= thresh)[0][0]
+                # find end ind where proba has gone below thresh - if start and end inds are too close together, find a new end index
+                search_win_size = 100
+                possible_win_lengths = np.where(
+                    Y[start_win : start_win + search_win_size] < end_thresh
+                )[0]
+                while len(possible_win_lengths) < 1:
+                    search_win_size += 10
+                    possible_win_lengths = np.where(
+                        Y[start_win : start_win + search_win_size] < thresh
+                    )[0]
+                    if start_win + search_win_size > Y.shape[0]:
+                        break
+                if len(possible_win_lengths) == 0:
+                    end_win = Y.shape[0]
+                else:
+                    end_win = start_win + possible_win_lengths[0]
+                proba = np.max(Y[start_win:end_win])
+                pick = start_win + np.where(Y[start_win:end_win] == proba)[0][0]
+                d = {"sample": pick, "width": end_win - start_win, "height": proba}
+                detections.append(d)
+                # widths.append(end_win - start_win)
+                # picks.append(pick)
+                # proba_values.append(proba)
+                i1 = end_win
+            else:
+                i1 += window_size
+
+        return detections
 
 
 class PhaseDetector:
