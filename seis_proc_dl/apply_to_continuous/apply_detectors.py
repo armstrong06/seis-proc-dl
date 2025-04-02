@@ -24,6 +24,7 @@ import pyuussmlmodels
 from seis_proc_dl.utils.model_helpers import clamp_presigmoid_values
 from seis_proc_dl.detectors.models.unet_model import UNetModel
 from seis_proc_dl.utils.config_apply_detectors import Config
+from seis_proc_dl.apply_to_continuous.database_connector import DetectorDBConnection
 
 # Followed this tutorial https://betterstack.com/community/guides/logging/how-to-start-logging-with-python/
 # Just a simple logger for now
@@ -89,6 +90,27 @@ class ApplyDetector:
             self.__init_3c()
         else:
             raise ValueError("Invalid number of components")
+
+        self.db_conn = None
+        if config.database is not None:
+            self.db_conn = DetectorDBConnection()
+            if ncomps == 1:
+                self.db_conn.add_detection_method(
+                    *config.database.det_method_1c_P,
+                    path=config.paths.one_comp_p_model,
+                    phase="P",
+                )
+            elif ncomps == 3:
+                self.db_conn.add_detection_method(
+                    **config.database.det_method_3c_P,
+                    path=config.paths.three_comp_p_model,
+                    phase="P",
+                )
+                self.db_conn.add_detection_method(
+                    *config.database.det_method_3c_S,
+                    path=config.paths.three_comp_s_model,
+                    phase="S",
+                )
 
     def __init_1c(self):
         """Initialize the phase detector for 1 component P picker"""
@@ -169,7 +191,12 @@ class ApplyDetector:
         if self.ncomps == 1 and ((len(chan) == 2) or ("?" in chan)):
             chan = chan[0:2] + "Z"
 
-        stat_startdate, stat_enddate = self.get_station_dates(year, stat, chan)
+        if self.db_conn is None:
+            stat_startdate, stat_enddate = self.get_station_dates(year, stat, chan)
+        else:
+            stat_startdate, stat_enddate = self.db_conn.get_channel_dates(
+                date, stat, chan
+            )
         date, n_days = self.validate_date_range(
             stat_startdate, stat_enddate, date, n_days
         )
@@ -186,15 +213,12 @@ class ApplyDetector:
             ### If starting in a new year, reload metadata
             if date.year > year:
                 year = date.year
-                stat_startdate, stat_enddate = self.get_station_dates(year, stat, chan)
+                # I don't actually do anything with the updated dates sooooo
+                # if self.db_conn is None:
+                #     # Only need to do this if reading station XML files from each year
+                #     # database should include all relevant info
+                #     stat_startdate, stat_enddate = self.get_station_dates(year, stat, chan)
                 logger.info(f"Starting in new year ({year})")
-
-            # Should not need this anymore because of validate_date_range
-            ### Make sure that the station is operational for this date
-            # if not self.validate_run_date(date, stat_startdate, stat_enddate):
-            #     # logger.warning(f"Valid date range for station {stat}.{chan} is {stat_startdate} - {stat_enddate}. Exiting.")
-            #     # return
-            #     continue
 
             ### The data files are organized Y/m/d, get the appropriate date/station files ###
             date_str = date.strftime("%Y/%m/%d")
@@ -353,7 +377,6 @@ class ApplyDetector:
         )
 
     def get_station_dates(self, year, stat, chan):
-        # TODO:db Update this to check the database for a station first, then read the xml file and add to the db
         """Read in station xml files and get the start and end dates for the appropriate channels.
 
         Args:
