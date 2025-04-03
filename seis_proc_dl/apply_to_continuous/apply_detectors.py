@@ -259,7 +259,6 @@ class ApplyDetector:
                     insufficient_data_dates.append(date_str)
                     error = "insufficient_data"
                     # Reset dataloader
-                    # TODO: This will be called twice if the db is not used
                     self.dataloader.error_in_loading()
 
             # TODO: save the continuous data here
@@ -287,6 +286,7 @@ class ApplyDetector:
                     insufficient_data_dates,
                 )
 
+    # TODO: This name seems inappropriate (apply_to_one_day?)
     def apply_to_one_file(self, files, outdir=None, debug_N_examples=-1):
         """Process one miniseed file and write posterior probability and data information to disk. Runs both
         the P and S detector for 3C data and just the P detector for 1C data. The output file names will contain the
@@ -326,7 +326,9 @@ class ApplyDetector:
         if not load_succeeded:
             if self.db_conn is None:
                 # Only write out the metadata if not storing in the db
-                self.dataloader.error_in_loading(outfile=meta_outfile_name)
+                # reset of loader will happen in apply_to_multiple_days
+                # TODO: is that a bad idea?
+                self.dataloader.write_data_info(meta_outfile_name)
             return False
 
         logger.debug(f"Time to load data: {time.time() - start_total:0.2f} s")
