@@ -141,11 +141,13 @@ class TestApplyDetector:
             debug_N_examples=256,
         )
         assert not succeeded
-        assert applier.dataloader.metadata is None
+        # I updated the function to not reset the dataloader explicitly
+        assert applier.dataloader.metadata is not None
+        assert applier.dataloader.gaps is not None
+        # These never got set
         assert applier.dataloader.continuous_data is None
         assert applier.dataloader.previous_continuous_data is None
         assert applier.dataloader.previous_endtime is None
-        assert applier.dataloader.gaps is None
 
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         assert not os.path.exists(expected_p_probs_file)
@@ -1116,7 +1118,7 @@ class TestDataLoader:
             }
         )
         dl = apply_detectors.DataLoader()
-        dl.store_meta_data(stats, three_channels=True)
+        dl.store_metadata(stats, three_channels=True)
 
         # End time is a read only field in Stats => this is what is should end up being
         endtime = UTC(2002, 1, 1, 23, 59, 59, 996000)
@@ -1165,7 +1167,7 @@ class TestDataLoader:
             }
         )
         dl = apply_detectors.DataLoader()
-        dl.store_meta_data(stats, three_channels=False)
+        dl.store_metadata(stats, three_channels=False)
         # Just need to check that the channel code for 1C stations has a Z for the orientation
         # everything else is the same as 3C
         assert dl.metadata["channel"] == "HHZ"
@@ -3268,6 +3270,10 @@ class TestApplyDetectorAsyncronousOpenVino:
         os.remove(expected_p_probs_file)
         os.remove(expected_s_probs_file)
         os.remove(expected_json_file)
+
+
+class TestApplyDetectorDB:
+    pass
 
 
 if __name__ == "__main__":
