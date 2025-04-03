@@ -93,7 +93,7 @@ class ApplyDetector:
 
         self.db_conn = None
         if config.database is not None:
-            self.db_conn = DetectorDBConnection()
+            self.db_conn = DetectorDBConnection(ncomps)
             if ncomps == 1:
                 self.db_conn.add_detection_method(
                     *config.database.det_method_1c_P,
