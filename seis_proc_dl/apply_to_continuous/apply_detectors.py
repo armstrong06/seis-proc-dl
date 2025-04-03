@@ -40,13 +40,15 @@ logger.setLevel(logging.DEBUG)
 
 
 class ApplyDetector:
-    def __init__(self, ncomps, config) -> None:
+    def __init__(self, ncomps, config, session_factory=None) -> None:
         """Use DataLoader and PhaseDetector to load and apply detectors to day chunks of seismic data.
 
         Args:
             ncomps (int): The number of components for the phase detector and data (1 or 3).
             config (object): dictionary defining information needed for the PhaseDetector and DataLoader,
             and path information
+            session_factory: SQLAlchemy object from produced by a sessionmaker. needed when using a test database 
+                in DetectorDBConnection
 
         Raises:
             ValueError: _description_
@@ -93,7 +95,7 @@ class ApplyDetector:
 
         self.db_conn = None
         if config.database is not None:
-            self.db_conn = DetectorDBConnection(ncomps)
+            self.db_conn = DetectorDBConnection(ncomps, session_factory=session_factory)
             if ncomps == 1:
                 self.db_conn.add_detection_method(
                     *config.database.det_method_1c_P,
