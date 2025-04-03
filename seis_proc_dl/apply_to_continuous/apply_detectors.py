@@ -98,18 +98,21 @@ class ApplyDetector:
             self.db_conn = DetectorDBConnection(ncomps, session_factory=session_factory)
             if ncomps == 1:
                 self.db_conn.add_detection_method(
-                    *config.database.det_method_1c_P,
+                    config.database.det_method_1c_P.name,
+                    desc=config.database.det_method_1c_P.desc,
                     path=config.paths.one_comp_p_model,
                     phase="P",
                 )
             elif ncomps == 3:
                 self.db_conn.add_detection_method(
-                    **config.database.det_method_3c_P,
+                    config.database.det_method_3c_P.name,
+                    desc=config.database.det_method_3c_P.desc,
                     path=config.paths.three_comp_p_model,
                     phase="P",
                 )
                 self.db_conn.add_detection_method(
-                    *config.database.det_method_3c_S,
+                    config.database.det_method_3c_S.name,
+                    desc=config.database.det_method_3c_S.desc,
                     path=config.paths.three_comp_s_model,
                     phase="S",
                 )
