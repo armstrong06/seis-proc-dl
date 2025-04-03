@@ -359,7 +359,9 @@ class ApplyDetector:
 
         ### Save the station meta info (including gaps) to a file in the same dir as the post probs. ###
         ### Only need one file per station/day pair ###
-        self.dataloader.write_data_info(meta_outfile_name)
+        # Only save metadata if not storing in the database
+        if self.db_conn is None:
+            self.dataloader.write_data_info(meta_outfile_name)
         logger.debug(f"Total run time for day: {time.time() - start_total:0.2f} s")
         return True
 
