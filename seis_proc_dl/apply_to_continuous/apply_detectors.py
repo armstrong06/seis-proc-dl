@@ -229,10 +229,14 @@ class ApplyDetector:
             ### Make the output dirs have the same structure as the data dirs ###
             date_outdir = os.path.join(self.outdir, date_str)
 
+            error = None
+            db_contdata_metadata = None
+            db_gaps = None
             ### If there are no files for that station/day, move to the next day ###
             if len(files) == 0:
                 logger.info(f"No data for {date_str} {stat} {chan}")
                 missing_dates.append(date_str)
+                error = "no_data"
                 # Reset dataloader
                 self.dataloader.error_in_loading()
             elif (self.ncomps == 1 and len(files) != 1) or (
@@ -242,27 +246,46 @@ class ApplyDetector:
                     f"Incorrect number of files found for {date_str} {stat} {chan}"
                 )
                 file_error_dates.append(date_str)
+                error = f"file_error: Incorrect Number of Files ({len(files)}/{self.ncomps})"
                 # Reset dataloader
                 self.dataloader.error_in_loading()
             else:
                 applied_successfully = self.apply_to_one_file(
                     files, date_outdir, debug_N_examples=debug_N_examples
                 )
+                db_contdata_metadata = self.dataloader.metadata
+                db_gaps = self.dataloader.gaps
                 if not applied_successfully:
                     insufficient_data_dates.append(date_str)
+                    error = "insufficient_data"
+                    # Reset dataloader
+                    # TODO: This will be called twice if the db is not used
+                    self.dataloader.error_in_loading()
+
+            # TODO: save the continuous data here
+            if self.db_conn is not None:
+                self.db_conn.save_data_info(date, db_contdata_metadata, error=error)
+                # TODO: format and save gaps
 
             date += delta
 
-        if len(missing_dates) > 0:
-            self.write_dates_to_file(self.outdir, "missing", stat, chan, missing_dates)
-        if len(file_error_dates) > 0:
-            self.write_dates_to_file(
-                self.outdir, "file_error", stat, chan, file_error_dates
-            )
-        if len(insufficient_data_dates) > 0:
-            self.write_dates_to_file(
-                self.outdir, "insufficient_data", stat, chan, insufficient_data_dates
-            )
+        if self.db_conn is None:
+            if len(missing_dates) > 0:
+                self.write_dates_to_file(
+                    self.outdir, "missing", stat, chan, missing_dates
+                )
+            if len(file_error_dates) > 0:
+                self.write_dates_to_file(
+                    self.outdir, "file_error", stat, chan, file_error_dates
+                )
+            if len(insufficient_data_dates) > 0:
+                self.write_dates_to_file(
+                    self.outdir,
+                    "insufficient_data",
+                    stat,
+                    chan,
+                    insufficient_data_dates,
+                )
 
     def apply_to_one_file(self, files, outdir=None, debug_N_examples=-1):
         """Process one miniseed file and write posterior probability and data information to disk. Runs both
@@ -301,7 +324,9 @@ class ApplyDetector:
             # expected_file_duration_s=self.expected_file_duration_s)
 
         if not load_succeeded:
-            self.dataloader.error_in_loading(outfile=meta_outfile_name)
+            if self.db_conn is None:
+                # Only write out the metadata if not storing in the db
+                self.dataloader.error_in_loading(outfile=meta_outfile_name)
             return False
 
         logger.debug(f"Time to load data: {time.time() - start_total:0.2f} s")
@@ -1096,7 +1121,7 @@ class DataLoader:
         # Keep all gap information and store metadata - regardless if load failed
         gaps = gaps_E + gaps_N + gaps_Z
         self.gaps = gaps
-        self.store_meta_data(st_E[0].stats)
+        self.store_metadata(st_E[0].stats)
         # If any loads failed, exit
         if (not load_succeeded_Z) or (not load_succeeded_E) or (not load_succeeded_N):
             return False
@@ -1152,7 +1177,7 @@ class DataLoader:
         )
 
         self.gaps = gaps
-        self.store_meta_data(st[0].stats, three_channels=False)
+        self.store_metadata(st[0].stats, three_channels=False)
 
         if not load_succeeded:
             return False
@@ -1323,7 +1348,7 @@ class DataLoader:
         self.previous_continuous_data = None
         self.previous_endtime = None
 
-    def store_meta_data(self, stats, three_channels=True):
+    def store_metadata(self, stats, three_channels=True):
         """Store the relevant miniseed metadata for use later. The orientation of the 3C channel
         information is replaced with '?'.
 
