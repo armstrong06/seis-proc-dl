@@ -1,35 +1,44 @@
 import sys
 import obspy
 import numpy as np
-
 from seis_proc_db import database
 from seis_proc_db import services
 
-class DailyDetectionDBInfo():
+# TODO: Think I need to not store ORM objects, use them in the same session only. Just store id's and get other info as needed.
+
+
+class DailyDetectionDBInfo:
     def __init__(self, date):
         self.date = date
-        self.contdatainfo = None
-        self.gaps = None
+        self.contdatainfo_id = None
+        # TODO If I use bulk inserts, there won't be any detections/picks to store from the insert
         self.detections = None
         self.picks = None
 
 
-class ChannelInfo():
+class ChannelInfo:
     def __init__(self, channels):
-        self.channels = channels
-        self.startdate = np.min([chan.ondate for chan in channels])
+        self.ondate = np.min([chan.ondate for chan in channels])
         ends = [chan.offdate for chan in channels]
-        self.enddate = None if None in ends else np.max(ends)
+        self.offdate = None if None in ends else np.max(ends)
+        self.channel_ids = self.gather_chan_ids(channels)
+
+    def gather_chan_ids(self, channels):
+        channel_ids = {}
+        for chan in channels:
+            channel_ids[chan.seed_code] = chan.id
+        return channel_ids
+
 
 class DetectorDBConnection:
-    def __init__(self, ncomps):
+    def __init__(self, ncomps, session_factory=None):
+        self.Session = session_factory or database.Session
         self.ncomps = ncomps
         self.station = None
         self.channel_info = None
-        self.p_detection_method = None
-        self.s_detection_method = None
+        self.p_detection_method_id = None
+        self.s_detection_method_id = None
         self.seed_code = None
-        self.Session = database.Session
         self.daily_info = None
 
     def get_channel_dates(self, date, stat, seed_code):
@@ -39,7 +48,8 @@ class DetectorDBConnection:
             seed_code = seed_code[:-1]
         self.seed_code = seed_code
 
-        with self.Session() as session:
+        session = self.Session()
+        with session.begin():
 
             # Get all channels for this station name and channel type
             all_channels = services.get_common_station_channels_by_name(
@@ -71,14 +81,19 @@ class DetectorDBConnection:
 
     def add_detection_method(self, name, desc, path, phase):
         """Add a detection method to the database. If it already exists, update it."""
-        with self.Session() as session:
+        session = self.Session()
+        with session.begin():
             services.upsert_detection_method(
                 session, name, phase=phase, desc=desc, path=path
             )
             if phase == "P":
-                self.p_detection_method = services.get_detection_method(session, name)
+                self.p_detection_method_id = services.get_detection_method(
+                    session, name
+                ).id
             elif phase == "S":
-                self.s_detection_method = services.get_detection_method(session, name)
+                self.s_detection_method_id = services.get_detection_method(
+                    session, name
+                ).id
             else:
                 raise ValueError("Invalid Phase for Detection Method")
 
@@ -89,20 +104,21 @@ class DetectorDBConnection:
             self.update_channels(date)
 
     def validate_channels_for_date(self, date):
-        if (date >= self.channel_info.startdate and 
-            (self.channel_info.enddate is None or self.channel_info.enddate <= date)):
+        if date >= self.channel_info.ondate and (
+            self.channel_info.offdate is None or date <= self.channel_info.offdate
+        ):
             return True
-            
+
         return False
-    
+
     def update_channels(self, date):
-        with self.Session() as session:
-        # Get the Station object and the Channel objects for the appropriate date
-            _, selected_channels = (
-                services.get_operating_channels_by_station_name(
-                    session, self.station.sta, self.seed_code, date
-                ))
-        
+        session = self.Session()
+        with session.begin():
+            # Get the Station object and the Channel objects for the appropriate date
+            _, selected_channels = services.get_operating_channels_by_station_name(
+                session, self.station.sta, self.seed_code, date
+            )
+
         self.channel_info = ChannelInfo(selected_channels)
 
     def save_data_info(self, date, metadata_dict, error=None):
@@ -114,11 +130,8 @@ class DetectorDBConnection:
 
         self.start_new_day(date)
 
-        with self.Session() as session:
-            # assert metadata_dict["chan_pref"][0:2] == self.seed_code
-            contdatainfo = services.get_contdatainfo(
-                session, self.station.id, self.seed_code, self.ncomps, date
-            )
+        session = self.Session()
+        with session.begin():
             db_dict = {
                 "sta_id": self.station.id,
                 "chan_pref": self.seed_code,
@@ -134,46 +147,93 @@ class DetectorDBConnection:
                     "org_npts": metadata_dict["original_npts"],
                     "org_start": metadata_dict["original_starttime"],
                     "org_end": metadata_dict["original_endtime"],
-                    "proc_npts": proc_npts,
-                    "proc_start": proc_start,
+                    "proc_npts": metadata_dict["npts"],
+                    "proc_start": metadata_dict["starttime"],
                     "proc_end": None,  # just get this from proc_start, samp_rate, and proc_npts
                     "prev_appended": metadata_dict["previous_appended"],
-                    
-                    }
-             
+                }
+
+            contdatainfo = services.get_contdatainfo(
+                session, self.station.id, self.seed_code, self.ncomps, date
+            )
+
             if contdatainfo is None:
-                proc_npts = metadata_dict["npts"]
-                proc_start = metadata_dict["starttime"]
-
-                if metadata_dict["orginal_npts"] == proc_npts:
-                    proc_npts = None
-
-                if metadata_dict["original_starttime"] == proc_start:
-                    proc_start = None
-
-                contdatainfo = services.insert_contdatainfo(session, **db_dict)
+                contdatainfo = services.insert_contdatainfo(session, db_dict)
             else:
+                # I think I did this because I'm fine with the entry existing already,
+                # as long as all the values are the same. just calling insert and catching
+                # the IntegrityError when there is a duplicate entry would not check
                 if (
                     contdatainfo.samp_rate != db_dict["samp_rate"]
-                    and contdatainfo.dt != db_dict["dt"]
-                    and contdatainfo.org_npts != db_dict["org_npts"]
-                    and contdatainfo.org_start != db_dict["org_start"]
-                    and contdatainfo.proc_npts != db_dict["proc_start"]
-                    and contdatainfo.prev_appended != db_dict["prev_appended"]
+                    or contdatainfo.dt != db_dict["dt"]
+                    or contdatainfo.org_npts != db_dict["org_npts"]
+                    or contdatainfo.org_start != db_dict["org_start"]
+                    or contdatainfo.proc_start != db_dict["proc_start"]
+                    or contdatainfo.proc_npts != db_dict["proc_npts"]
+                    or contdatainfo.prev_appended != db_dict["prev_appended"]
                 ):
-                    info_str = f"{db_dict["sta_id"]}, {db_dict["chan_pref"]}, {db_dict["date"]}"
+                    info_str = f"{db_dict['sta_id']}, {db_dict['chan_pref']}, {db_dict['date']}"
                     raise ValueError(
                         f"DailyContDataInfo {info_str} row already exists but the values have changed"
                     )
 
-        self.daily_info.contdatainfo = contdatainfo
+        self.daily_info.contdatainfo_id = contdatainfo.id
 
-    def save_gaps():
+    def format_and_save_gaps(self, gaps, min_gap_sep):
         """Add gaps into the table. If many gaps in the same time period, combine them
-        into one 'effective' gap"""
-        pass
+        into one 'effective' gap. gaps should be a list of lists containing the gap seed_code, startime and endtime
+        """
 
-    def save_detections():
+        assert len(gaps[0]) == 3, "Expected just three values in the gap"
+
+        formatted_gaps = []
+        for seed_code in self.channel_info.channel_ids.keys():
+            chan_id = self.channel_info.channel_ids[seed_code]
+            # Get only the gaps for one channel
+            chan_gaps = list(filter(lambda x: x[0] == seed_code, gaps))
+            # chan_inds = np.where(gap_chans == seed_code)[0]
+            # chan_starts = gap_starts[chan_inds]
+            # chan_ends = gap_ends[chan_inds]
+            # Format the gaps for inserting
+            chan_gaps = self.format_channel_gaps(chan_gaps, chan_id, min_gap_sep)
+            formatted_gaps += chan_gaps
+
+        session = self.Session()
+        with session.begin():
+            services.insert_gaps(session, formatted_gaps)
+
+    def format_channel_gaps(self, gaps, chan_id, min_gap_sep):
+        gaps.sort(key=lambda x: x[1])
+        data_id = self.daily_info.contdatainfo_id
+        merged = []
+        for current in gaps:
+            if not merged:
+                merged.append(self.convert_gap_to_dict(current, data_id, chan_id))
+            else:
+                previous = merged[-1]
+                # Compare the start time of the current gap to the end time of the last one
+                gap_delta = (current[1] - previous["end"]).seconds
+                assert gap_delta > 0, ValueError("Two adjacent gaps are overlapping")
+                if gap_delta < min_gap_sep:
+                    previous["end"] = current[2]
+                    previous["avail_sig_sec"] += gap_delta
+                else:
+                    merged.append(self.convert_gap_to_dict(current, data_id, chan_id))
+
+        return merged
+
+    @staticmethod
+    def convert_gap_to_dict(gap, data_id, chan_id):
+        d = {
+            "data_id": data_id,
+            "chan_id": chan_id,
+            "start": gap[1],
+            "end": gap[2],
+            "avail_sig_sec": 0.0,
+        }
+        return d
+
+    def save_detections(self, detections):
         """Add detections above a threshold into the database. Do not add detections if
         they exist within a gap"""
         pass

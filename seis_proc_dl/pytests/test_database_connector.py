@@ -1,12 +1,17 @@
 import pytest
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import engine
+from sqlalchemy import inspect
 from datetime import datetime
+from copy import deepcopy
 from seis_proc_dl.apply_to_continuous.database_connector import DetectorDBConnection
+from seis_proc_dl.apply_to_continuous.apply_detectors import ApplyDetector
 from seis_proc_db.database import engine
+from seis_proc_db import services, tables
 
 
-dateformat = "%Y-%m-%dT%H:%M:%S.%f"
+datetimeformat = "%Y-%m-%dT%H:%M:%S.%f"
+dateformat = "%Y-%m-%d"
 
 # Create a session factory (not bound yet)
 TestSessionFactory = sessionmaker(bind=engine, expire_on_commit=False)
@@ -44,71 +49,461 @@ def db_session(monkeypatch):
     connection.close()
 
 
-def test_get_channels(db_session):
-    session, patch_session = db_session  # Unpack session & patch function
-    db_conn = DetectorDBConnection()  # Create instance
+class TestDetectorDBConnection:
+    @pytest.fixture
+    def db_session_with_3c_stat_loaded(self, db_session):
+        session, patch_session = db_session  # Unpack session & patch function
+        db_conn = DetectorDBConnection(3)  # Create instance
 
-    patch_session(db_conn)  # Patch `self.Session` on the instance
-    start, end = db_conn.get_channel_dates(
-        datetime.strptime("2012-10-10T00:00:00.00", dateformat), "YNR", "HH"
-    )
+        patch_session(db_conn)  # Patch `self.Session` on the instance
+        start, end = db_conn.get_channel_dates(
+            datetime.strptime("2012-10-10T00:00:00.00", datetimeformat), "YNR", "HH"
+        )
 
-    assert start == datetime.strptime(
-        "2003-09-09T00:00:00.00", dateformat
-    ), "invalid start"
-    assert end == None, "invalid end"
-    assert len(db_conn.channels) == 3, "invalid number of channels"
-    print("CHANNEL", db_conn.channels[0])
-    assert db_conn.channels[0].ondate == datetime.strptime(
-        "2011-09-11T00:00:00.00", dateformat
-    ), "invalid channel ondate"
-    assert db_conn.channels[0].offdate == datetime.strptime(
-        "2013-03-31T23:59:59.00", dateformat
-    ), "invalid channel offdate"
+        return session, db_conn, start, end
+
+    def test_get_channels(self, db_session_with_3c_stat_loaded):
+        session, db_conn, start, end = db_session_with_3c_stat_loaded
+
+        assert start == datetime.strptime(
+            "2003-09-09T00:00:00.00", datetimeformat
+        ), "invalid start"
+        assert end == None, "invalid end"
+        assert (
+            len(db_conn.channel_info.channel_ids.keys()) == 3
+        ), "invalid number of channels"
+        assert db_conn.channel_info.ondate == datetime.strptime(
+            "2011-09-11T00:00:00.00", datetimeformat
+        ), "invalid channel ondate"
+        assert db_conn.channel_info.offdate == datetime.strptime(
+            "2013-03-31T23:59:59.00", datetimeformat
+        ), "invalid channel offdate"
+
+    def test_get_channels_1C(self, db_session):
+        session, patch_session = db_session  # Unpack session & patch function
+        db_conn = DetectorDBConnection(1)  # Create instance
+        patch_session(db_conn)  # Patch `self.Session` on the instance
+
+        start, end = db_conn.get_channel_dates(
+            datetime.strptime("2012-10-10T00:00:00.00", datetimeformat), "QLMT", "EHZ"
+        )
+
+        assert start == datetime.strptime(
+            "2001-06-09T00:00:00.00", datetimeformat
+        ), "invalid start"
+        assert end == None, "invalid end"
+        assert (
+            len(db_conn.channel_info.channel_ids.keys()) == 1
+        ), "invalid number of channels"
+        assert db_conn.channel_info.ondate == datetime.strptime(
+            "2003-06-10T18:00:00.00", datetimeformat
+        ), "invalid channel ondate"
+        assert db_conn.channel_info.offdate == datetime.strptime(
+            "2013-09-06T18:00:00.00", datetimeformat
+        ), "invalid channel offdate"
+
+    def test_add_detection_method_P(self, db_session):
+        session, patch_session = db_session  # Unpack session & patch function
+        db_conn = DetectorDBConnection(1)  # Create instance
+
+        patch_session(db_conn)  # Patch `self.Session` on the instance
+
+        db_conn.add_detection_method("TEST", "test method", "data/path", "P")
+        assert (
+            db_conn.p_detection_method_id is not None
+        ), "detection_method id is not set"
+        det_method = session.get(tables.DetectionMethod, db_conn.p_detection_method_id)
+        assert det_method is not None, "No detection method returned"
+        assert det_method.name == "TEST", "invalid name"
+        assert det_method.phase == "P", "invalid phase"
+
+    def test_add_detection_method_S(self, db_session):
+        session, patch_session = db_session  # Unpack session & patch function
+        db_conn = DetectorDBConnection(3)  # Create instance
+
+        patch_session(db_conn)  # Patch `self.Session` on the instance
+
+        db_conn.add_detection_method("TEST", "test method", "data/path", "S")
+        assert (
+            db_conn.s_detection_method_id is not None
+        ), "detection_method id is not set"
+        det_method = session.get(tables.DetectionMethod, db_conn.s_detection_method_id)
+        assert det_method is not None, "No detection method returned"
+        assert det_method.name == "TEST", "invalid name"
+        assert det_method.phase == "S", "invalid phase"
+
+    def test_validate_channels_for_date_valid(self, db_session_with_3c_stat_loaded):
+        session, db_conn, start, end = db_session_with_3c_stat_loaded
+        date = datetime.strptime("2013-03-31", dateformat)
+        valid = db_conn.validate_channels_for_date(date)
+        assert valid, "Returned false"
+
+    def test_validate_channels_for_date_invalid(self, db_session_with_3c_stat_loaded):
+        session, db_conn, start, end = db_session_with_3c_stat_loaded
+        date = datetime.strptime("2013-04-01", dateformat)
+        valid = db_conn.validate_channels_for_date(date)
+        assert not valid, "Returned true"
+
+    def test_update_channels(self, db_session_with_3c_stat_loaded):
+        session, db_conn, start, end = db_session_with_3c_stat_loaded
+        date = datetime.strptime("2013-04-01", dateformat)
+        db_conn.update_channels(date)
+        assert db_conn.channel_info.ondate == datetime.strptime(
+            "2013-04-01T00:00:00.00", datetimeformat
+        ), "invalid ondate"
+        assert db_conn.channel_info.offdate == datetime.strptime(
+            "2015-08-25T23:59:59.00", datetimeformat
+        ), "invalid ondate"
+
+    def test_start_new_day_valid_date(self, db_session_with_3c_stat_loaded):
+        session, db_conn, start, end = db_session_with_3c_stat_loaded
+
+        new_date = datetime.strptime("2013-03-31", dateformat)
+        db_conn.start_new_day(new_date)
+        assert (
+            db_conn.daily_info.date == new_date
+        ), "invalid date in DailyDetectionDBInfo"
+        assert db_conn.channel_info.ondate == datetime.strptime(
+            "2011-09-11T00:00:00.00", datetimeformat
+        ), "invalid channel ondate"
+        assert db_conn.channel_info.offdate == datetime.strptime(
+            "2013-03-31T23:59:59.00", datetimeformat
+        ), "invalid channel offdate"
+
+    def test_start_new_day_invalid_date(self, db_session_with_3c_stat_loaded):
+        session, db_conn, start, end = db_session_with_3c_stat_loaded
+
+        new_date = datetime.strptime("2013-04-01", dateformat)
+        db_conn.start_new_day(new_date)
+        assert (
+            db_conn.daily_info.date == new_date
+        ), "invalid date in DailyDetectionDBInfo"
+        assert db_conn.channel_info.ondate == datetime.strptime(
+            "2013-04-01T00:00:00.00", datetimeformat
+        ), "invalid ondate"
+        assert db_conn.channel_info.offdate == datetime.strptime(
+            "2015-08-25T23:59:59.00", datetimeformat
+        ), "invalid ondate"
+
+    @pytest.fixture
+    def contdatainfo_ex(self):
+        new_date = datetime.strptime("2013-03-31", dateformat)
+        metadata_dict = {
+            "sampling_rate": 100.0,
+            "dt": 0.01,
+            "original_npts": 8280000,
+            "original_starttime": datetime.strptime(
+                "2013-03-31T01:00:00.00", datetimeformat
+            ),
+            "original_endtime": datetime.strptime(
+                "2013-03-31T23:59:59.59", datetimeformat
+            ),
+            "npts": 8640000,
+            "starttime": datetime.strptime("2013-03-31T00:00:00.00", datetimeformat),
+            "previous_appended": False,
+        }
+        return new_date, deepcopy(metadata_dict)
+
+    @pytest.fixture
+    def db_session_with_saved_contdatainfo(
+        self, db_session_with_3c_stat_loaded, contdatainfo_ex
+    ):
+        session, db_conn, start, end = db_session_with_3c_stat_loaded
+        new_date, metadata_dict = contdatainfo_ex
+        db_conn.save_data_info(new_date, metadata_dict)
+        return session, db_conn
+
+    def test_save_data_info(self, db_session_with_saved_contdatainfo, contdatainfo_ex):
+        session, db_conn = db_session_with_saved_contdatainfo
+        new_date, metadata_dict = contdatainfo_ex
+        assert (
+            db_conn.daily_info.date == new_date
+        ), "invalid date in DailyDetectionDBInfo"
+        assert db_conn.daily_info.contdatainfo_id is not None, "contdatainfo id not set"
+        contdatainfo = session.get(
+            tables.DailyContDataInfo, db_conn.daily_info.contdatainfo_id
+        )
+        assert inspect(contdatainfo).persistent, "contdatainfo not persistent"
+        assert contdatainfo is not None, "contdatainfo not set"
+        assert contdatainfo.chan_pref == "HH", "invalid chan_pref"
+        assert contdatainfo.date == new_date.date(), "contdatainfo date incorrect"
+        assert contdatainfo.proc_start == datetime.strptime(
+            "2013-03-31T00:00:00.00", datetimeformat
+        ), "invalid proc_start"
+
+    def test_save_data_info_error(self, db_session_with_3c_stat_loaded):
+        session, db_conn, start, end = db_session_with_3c_stat_loaded
+        new_date = datetime.strptime("2013-03-31", dateformat)
+        metadata_dict = None
+        error = "no_data"
+        db_conn.save_data_info(new_date, metadata_dict, error=error)
+        assert (
+            db_conn.daily_info.date == new_date
+        ), "invalid date in DailyDetectionDBInfo"
+        assert db_conn.daily_info.contdatainfo_id is not None, "contdatainfo id not set"
+        contdatainfo = session.get(
+            tables.DailyContDataInfo, db_conn.daily_info.contdatainfo_id
+        )
+        assert inspect(contdatainfo).persistent, "contdatainfo not persistent"
+        assert contdatainfo is not None, "contdatainfo not set"
+        assert contdatainfo.chan_pref == "HH", "invalid chan_pref"
+        assert contdatainfo.date == new_date.date(), "contdatainfo date incorrect"
+        assert contdatainfo.proc_start == None, "proc_start is not None"
+        assert contdatainfo.error == error, "error incorrect"
+
+    def test_save_data_info_duplicate_identical_entry(
+        self, db_session_with_saved_contdatainfo, contdatainfo_ex
+    ):
+        session, db_conn = db_session_with_saved_contdatainfo
+        new_date, metadata_dict = contdatainfo_ex
+
+        # This should not throw any error because the duplicate rows are the same
+        db_conn.save_data_info(new_date, metadata_dict)
+
+    def test_save_data_info_duplicate_nonidentical_entry(
+        self, db_session_with_saved_contdatainfo, contdatainfo_ex
+    ):
+        session, db_conn = db_session_with_saved_contdatainfo
+        new_date, metadata_dict = contdatainfo_ex
+
+        # Change a value in the metadata
+        metadata_dict["npts"] = 100
+
+        # This should throw any error because the duplicate rows are the different
+        with pytest.raises(ValueError):
+            db_conn.save_data_info(new_date, metadata_dict)
+
+    @pytest.fixture
+    def simple_gaps_ex(self):
+        gap1 = [
+            # "Net",
+            # "Stat",
+            # "",
+            "HHE",
+            datetime.strptime("2013-03-31T01:00:00.00", datetimeformat),
+            datetime.strptime("2013-03-31T02:00:00.00", datetimeformat),
+            # 777,
+            # 777,
+        ]
+
+        gap2 = [
+            # "Net",
+            # "Stat",
+            # "",
+            "HHE",
+            datetime.strptime("2013-03-31T03:00:00.00", datetimeformat),
+            datetime.strptime("2013-03-31T04:00:00.00", datetimeformat),
+            # 777,
+            # 777,
+        ]
+
+        gap3 = [
+            # "Net",
+            # "Stat",
+            # "",
+            "HHE",
+            datetime.strptime("2013-03-31T05:00:00.00", datetimeformat),
+            datetime.strptime("2013-03-31T06:00:00.00", datetimeformat),
+            # 777,
+            # 777,
+        ]
+
+        return deepcopy([gap1, gap2, gap3])
+
+    @pytest.fixture
+    def close_gaps_ex(self):
+        gap1 = [
+            # "Net",
+            # "Stat",
+            # "",
+            "HHZ",
+            datetime.strptime("2013-03-31T01:00:00.00", datetimeformat),
+            datetime.strptime("2013-03-31T02:00:00.00", datetimeformat),
+            # 777,
+            # 777,
+        ]
+
+        # 1 second between gap1 and gap2
+        gap2 = [
+            # "Net",
+            # "Stat",
+            # "",
+            "HHZ",
+            datetime.strptime("2013-03-31T02:00:01.00", datetimeformat),
+            datetime.strptime("2013-03-31T02:00:11.00", datetimeformat),
+            # 777,
+            # 777,
+        ]
+
+        # 1 second between gap2 and gap3
+        gap3 = [
+            # "Net",
+            # "Stat",
+            # "",
+            "HHZ",
+            datetime.strptime("2013-03-31T02:00:12.00", datetimeformat),
+            datetime.strptime("2013-03-31T02:00:22.00", datetimeformat),
+            # 777,
+            # 777,
+        ]
+
+        # 5.0 seconds between gap3 and gap4
+        gap4 = [
+            # "Net",
+            # "Stat",
+            # "",
+            "HHZ",
+            datetime.strptime("2013-03-31T02:00:27.00", datetimeformat),
+            datetime.strptime("2013-03-31T02:00:37.00", datetimeformat),
+            # 777,
+            # 777,
+        ]
+
+        return deepcopy([gap1, gap2, gap3, gap4])
+
+    @pytest.fixture
+    def multi_channel_gaps_ex(self, close_gaps_ex, simple_gaps_ex):
+        gaps = close_gaps_ex
+        gaps += simple_gaps_ex
+
+        return gaps
+
+    def test_convert_gap_to_dict(self, simple_gaps_ex):
+        gaps = simple_gaps_ex
+        formatted = DetectorDBConnection.convert_gap_to_dict(gaps[0], 1, 2)
+
+        assert formatted["data_id"] == 1
+        assert formatted["chan_id"] == 2
+        assert formatted["start"] == datetime.strptime(
+            "2013-03-31T01:00:00.00", datetimeformat
+        )
+        assert formatted["end"] == datetime.strptime(
+            "2013-03-31T02:00:00.00", datetimeformat
+        )
+        assert formatted["avail_sig_sec"] == 0.0
+
+    def test_format_channel_gaps_simple(
+        self, db_session_with_saved_contdatainfo, simple_gaps_ex
+    ):
+        session, db_conn = db_session_with_saved_contdatainfo
+        gaps = simple_gaps_ex
+
+        formatted = db_conn.format_channel_gaps(gaps, 1, 5)
+
+        assert len(formatted) == 3, "incorrect number of gaps"
+
+    def test_format_channel_gaps_merged(
+        self, db_session_with_saved_contdatainfo, close_gaps_ex
+    ):
+        session, db_conn = db_session_with_saved_contdatainfo
+        gaps = close_gaps_ex
+
+        formatted = db_conn.format_channel_gaps(gaps, 1, 5)
+
+        assert len(formatted) == 2, "incorrect number of gaps"
+        assert (
+            formatted[0]["avail_sig_sec"] == 2.0
+        ), "incorrect avail_sig_sec for merged gap"
+        assert (
+            formatted[1]["avail_sig_sec"] == 0.0
+        ), "incorrect avail_sig_sec for single gap"
+        assert formatted[0]["start"] == datetime.strptime(
+            "2013-03-31T01:00:00.00", datetimeformat
+        ), "incorrect start for merged gap"
+        assert formatted[0]["end"] == datetime.strptime(
+            "2013-03-31T02:00:22.00", datetimeformat
+        ), "incorrect end for merged gap"
+
+    def test_format_and_save_gaps(
+        self, db_session_with_saved_contdatainfo, multi_channel_gaps_ex
+    ):
+        session, db_conn = db_session_with_saved_contdatainfo
+        gaps = multi_channel_gaps_ex
+
+        db_conn.format_and_save_gaps(gaps, 5)
+        gaps_E = services.get_gaps(
+            session,
+            db_conn.channel_info.channel_ids["HHE"],
+            db_conn.daily_info.contdatainfo_id,
+        )
+        assert len(gaps_E) == 3, "Incorrect number of gaps on HHE channel"
+
+        gaps_Z = services.get_gaps(
+            session,
+            db_conn.channel_info.channel_ids["HHZ"],
+            db_conn.daily_info.contdatainfo_id,
+        )
+        assert len(gaps_Z) == 2, "Incorrect number of gaps on HHZ channel"
+
+        # The only persistent objects in the session are gaps
+        # from sqlalchemy import inspect
+        # for obj in session:
+        #     print(obj)
+        # ContDataInfo is detached
+        # print("persistent", inspect(db_conn.daily_info.contdatainfo).persistent)
+        # print("detached", inspect(db_conn.daily_info.contdatainfo).detached)
 
 
-def test_get_channels_1C(db_session):
-    session, patch_session = db_session  # Unpack session & patch function
-    db_conn = DetectorDBConnection()  # Create instance
+examples_dir = "/uufs/chpc.utah.edu/common/home/u1072028/PycharmProjects/seis_proc_dl/seis_proc_dl/pytests/example_files"
+models_path = "/uufs/chpc.utah.edu/common/home/koper-group3/alysha/selected_models"
+apply_detectors_outdir = f"{examples_dir}/applydetector_results"
 
-    patch_session(db_conn)  # Patch `self.Session` on the instance
-    start, end = db_conn.get_channel_dates(
-        datetime.strptime("2012-10-10T00:00:00.00", dateformat), "QLMT", "EHZ"
-    )
+apply_detector_config = {
+    "paths": {
+        "data_dir": examples_dir,
+        "output_dir": apply_detectors_outdir,
+        "one_comp_p_model": f"{models_path}/oneCompPDetectorMEW_model_022.pt",
+        "three_comp_p_model": f"{models_path}/pDetectorMew_model_026.pt",
+        "three_comp_s_model": f"{models_path}/sDetector_model032.pt",
+    },
+    "unet": {
+        "window_length": 1008,
+        "sliding_interval": 500,
+        "device": "cpu",
+        "min_torch_threads": 2,
+        "min_presigmoid_value": -70,
+        "batchsize": 256,
+        "use_openvino": False,
+        "post_probs_file_type": "MSEED",
+    },
+    "dataloader": {
+        "store_N_seconds": 10,
+        # "expected_file_duration_s":3600,
+        "min_signal_percent": 0,
+    },
+    "database": {
+        "det_method_1c_P": {"name": "TEST_1C_UNET", "desc": "test for 1C P dets"},
+        "det_method_3c_P": {"name": "TEST_3C_UNET", "desc": "test for 3C P dets"},
+        "det_method_3c_S": {"name": "TEST_3C_UNET", "desc": "test for 3C S dets"},
+    },
+}
 
-    assert start == datetime.strptime(
-        "2001-06-09T00:00:00.00", dateformat
-    ), "invalid start"
-    assert end == None, "invalid end"
-    assert len(db_conn.channels) == 1, "invalid number of channels"
-    print("CHANNEL", db_conn.channels[0])
-    assert db_conn.channels[0].ondate == datetime.strptime(
-        "2003-06-10T18:00:00.00", dateformat
-    ), "invalid channel ondate"
-    assert db_conn.channels[0].offdate == datetime.strptime(
-        "2013-09-06T18:00:00.00", dateformat
-    ), "invalid channel offdate"
 
+class TestApplyDetectorDB:
+    def test_init_3c(self, db_session):
+        session, _ = db_session
+        applier = ApplyDetector(
+            3, apply_detector_config, session_factory=lambda: session
+        )
+        assert applier.db_conn is not None, "db_conn not defined"
+        assert applier.db_conn.ncomps == 3, "db_conn.ncomps incorrect"
+        assert (
+            applier.db_conn.p_detection_method_id is not None
+        ), "p detection method not set"
+        assert (
+            applier.db_conn.s_detection_method_id is not None
+        ), "s detection method not set"
 
-def test_add_detection_method_P(db_session):
-    session, patch_session = db_session  # Unpack session & patch function
-    db_conn = DetectorDBConnection()  # Create instance
-
-    patch_session(db_conn)  # Patch `self.Session` on the instance
-
-    db_conn.add_detection_method("TEST", "test method", "data/path", "P")
-
-    assert db_conn.p_detection_method.name == "TEST", "invalid name"
-    assert db_conn.p_detection_method.phase == "P", "invalid phase"
-
-
-def test_add_detection_method_S(db_session):
-    session, patch_session = db_session  # Unpack session & patch function
-    db_conn = DetectorDBConnection()  # Create instance
-
-    patch_session(db_conn)  # Patch `self.Session` on the instance
-
-    db_conn.add_detection_method("TEST", "test method", "data/path", "S")
-
-    assert db_conn.s_detection_method.name == "TEST", "invalid name"
-    assert db_conn.s_detection_method.phase == "S", "invalid phase"
+    def test_init_1c(self, db_session):
+        session, _ = db_session
+        applier = ApplyDetector(
+            1, apply_detector_config, session_factory=lambda: session
+        )
+        assert applier.db_conn is not None, "db_conn not defined"
+        assert applier.db_conn.ncomps == 1, "db_conn.ncomps incorrect"
+        assert (
+            applier.db_conn.p_detection_method_id is not None
+        ), "p detection method not set"
+        assert (
+            applier.db_conn.s_detection_method_id is None
+        ), "s detection method should not set"
