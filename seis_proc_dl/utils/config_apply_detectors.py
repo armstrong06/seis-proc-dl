@@ -16,7 +16,7 @@ class Config:
     def from_json(cls, cfg):
         """Creates config from json"""
         params = json.loads(json.dumps(cfg), object_hook=HelperObject)
-        return cls(params.unet, params.paths, params.dataloader)
+        return cls(params.unet, params.paths, params.dataloader, params.database)
 
 
 class HelperObject(object):
