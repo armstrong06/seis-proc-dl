@@ -103,7 +103,7 @@ class TestApplyDetector:
 
     def test_apply_to_file_day_1c(self):
         applier = apply_detectors.ApplyDetector(1, apply_detector_config)
-        succeeded = applier.apply_to_one_file(
+        succeeded, _, _ = applier.apply_to_one_file(
             [
                 f"{examples_dir}/WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
             ],
@@ -134,7 +134,7 @@ class TestApplyDetector:
         apply_detector_config_fail["dataloader"]["min_signal_percent"] = 99.5
 
         applier = apply_detectors.ApplyDetector(1, apply_detector_config_fail)
-        succeeded = applier.apply_to_one_file(
+        succeeded, _, _ = applier.apply_to_one_file(
             [
                 f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
             ],
@@ -383,7 +383,7 @@ class TestApplyDetector:
 
     def test_apply_to_file_day_1c_save_npz(self):
         applier = apply_detectors.ApplyDetector(1, apply_detector_config_npz)
-        succeeded = applier.apply_to_one_file(
+        succeeded, _, _ = applier.apply_to_one_file(
             [
                 f"{examples_dir}/WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
             ],
@@ -412,7 +412,7 @@ class TestApplyDetector:
         no_limit_config = deepcopy(apply_detector_config)
         no_limit_config["unet"]["min_torch_threads"] = -1
         applier = apply_detectors.ApplyDetector(1, no_limit_config)
-        succeeded = applier.apply_to_one_file(
+        succeeded, _, _ = applier.apply_to_one_file(
             [
                 f"{examples_dir}/WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
             ],
@@ -445,7 +445,7 @@ class TestApplyDetector:
             f"{examples_dir}/WY.YMR..HHN__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
             f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
         ]
-        succeeded = applier.apply_to_one_file(files, debug_N_examples=256)
+        succeeded, _, _ = applier.apply_to_one_file(files, debug_N_examples=256)
         assert succeeded
         # P Probs - 3c name should have E or 1 channel
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YMR..HHE__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
@@ -479,7 +479,7 @@ class TestApplyDetector:
             f"{examples_dir}/WY.YMR..HHN__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
             f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
         ]
-        succeeded = applier.apply_to_one_file(files, debug_N_examples=256)
+        succeeded, _, _ = applier.apply_to_one_file(files, debug_N_examples=256)
         assert succeeded
         # P Probs - 3c name should have E or 1 channel
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YMR..HHE__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.npz"
@@ -1060,7 +1060,7 @@ class TestDataLoader:
         loaded = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
         assert loaded
         assert dl.continuous_data.shape == (8640000, 3)
-        assert len(dl.metadata.keys()) == 15
+        assert len(dl.metadata.keys()) == 16
         assert len(dl.gaps) == 3
 
     def test_load_3c_catch_40hz(self):
@@ -1081,7 +1081,7 @@ class TestDataLoader:
         loaded = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
         assert loaded
         assert dl.continuous_data.shape == (8640000, 3)
-        assert len(dl.metadata.keys()) == 15
+        assert len(dl.metadata.keys()) == 16
         assert len(dl.gaps) == 3
 
     def test_load_3c_too_long(self):
@@ -1093,7 +1093,7 @@ class TestDataLoader:
         loaded = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
         assert loaded
         assert dl.continuous_data.shape == (8640000, 3)
-        assert len(dl.metadata.keys()) == 15
+        assert len(dl.metadata.keys()) == 16
         assert len(dl.gaps) == 0
 
     def test_save_meta_data_3c(self):
@@ -1196,7 +1196,7 @@ class TestDataLoader:
         loaded = dl.load_1c_data(file, min_signal_percent=0)
         assert loaded
         assert dl.continuous_data.shape == (8640000, 1)
-        assert len(dl.metadata.keys()) == 15
+        assert len(dl.metadata.keys()) == 16
         assert len(dl.gaps) == 1
         assert dl.gaps[0][3] == "HHZ"
 
@@ -2442,7 +2442,7 @@ class TestApplyDetectorSyncronousOpenVino:
     def test_apply_to_file_day_1c(self):
         applier = apply_detectors.ApplyDetector(1, apply_sync_openvino_detector_config)
         assert applier.p_detector.openvino_compiled is True
-        succeeded = applier.apply_to_one_file(
+        succeeded, _, _ = applier.apply_to_one_file(
             [
                 f"{examples_dir}/WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
             ],
@@ -2477,7 +2477,7 @@ class TestApplyDetectorSyncronousOpenVino:
             f"{examples_dir}/WY.YMR..HHN__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
             f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
         ]
-        succeeded = applier.apply_to_one_file(files, debug_N_examples=256)
+        succeeded, _, _ = applier.apply_to_one_file(files, debug_N_examples=256)
         assert succeeded
         # P Probs - 3c name should have E or 1 channel
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YMR..HHE__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
@@ -2641,7 +2641,7 @@ class TestApplyDetectorSyncronousOpenVino:
         applier = apply_detectors.ApplyDetector(
             1, apply_sync_openvino_detector_config_npz
         )
-        succeeded = applier.apply_to_one_file(
+        succeeded, _, _ = applier.apply_to_one_file(
             [
                 f"{examples_dir}/WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
             ],
@@ -2675,7 +2675,7 @@ class TestApplyDetectorSyncronousOpenVino:
             f"{examples_dir}/WY.YMR..HHN__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
             f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
         ]
-        succeeded = applier.apply_to_one_file(files, debug_N_examples=256)
+        succeeded, _, _ = applier.apply_to_one_file(files, debug_N_examples=256)
         assert succeeded
         # P Probs - 3c name should have E or 1 channel
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YMR..HHE__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.npz"
@@ -2897,7 +2897,7 @@ class TestApplyDetectorAsyncronousOpenVino:
     def test_apply_to_file_day_1c(self):
         applier = apply_detectors.ApplyDetector(1, apply_async_openvino_detector_config)
         assert applier.p_detector.openvino_compiled is True
-        succeeded = applier.apply_to_one_file(
+        succeeded, _, _ = applier.apply_to_one_file(
             [
                 f"{examples_dir}/WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
             ],
@@ -2932,7 +2932,7 @@ class TestApplyDetectorAsyncronousOpenVino:
             f"{examples_dir}/WY.YMR..HHN__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
             f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
         ]
-        succeeded = applier.apply_to_one_file(files, debug_N_examples=256)
+        succeeded, _, _ = applier.apply_to_one_file(files, debug_N_examples=256)
         assert succeeded
         # P Probs - 3c name should have E or 1 channel
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YMR..HHE__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
@@ -3096,7 +3096,7 @@ class TestApplyDetectorAsyncronousOpenVino:
         applier = apply_detectors.ApplyDetector(
             1, apply_async_openvino_detector_config_npz
         )
-        succeeded = applier.apply_to_one_file(
+        succeeded, _, _ = applier.apply_to_one_file(
             [
                 f"{examples_dir}/WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
             ],
@@ -3130,7 +3130,7 @@ class TestApplyDetectorAsyncronousOpenVino:
             f"{examples_dir}/WY.YMR..HHN__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
             f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
         ]
-        succeeded = applier.apply_to_one_file(files, debug_N_examples=256)
+        succeeded, _, _ = applier.apply_to_one_file(files, debug_N_examples=256)
         assert succeeded
         # P Probs - 3c name should have E or 1 channel
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YMR..HHE__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.npz"
