@@ -607,7 +607,7 @@ class ApplyDetector:
 
     @staticmethod
     def get_detections_from_post_probs(
-        Y, window_size=100, thresh=0.1, end_thresh_diff=0.05
+        Y, phase, window_size=100, thresh=0.1, end_thresh_diff=0.05, db_ids=None
     ):
         """
         Find potential phase arrivals in the probability time-series output from the UNet given a minimum threshold value.
@@ -647,7 +647,16 @@ class ApplyDetector:
                     end_win = start_win + possible_win_lengths[0]
                 proba = np.max(Y[start_win:end_win])
                 pick = start_win + np.where(Y[start_win:end_win] == proba)[0][0]
-                d = {"sample": pick, "width": end_win - start_win, "height": proba}
+                d = {
+                    "sample": pick,
+                    "width": end_win - start_win,
+                    "height": proba,
+                    "phase": phase,
+                }
+                if db_ids is not None:
+                    d["data_id"] = db_ids["data"]
+                    d["method_id"] = db_ids["method"]
+
                 detections.append(d)
                 # widths.append(end_win - start_win)
                 # picks.append(pick)
