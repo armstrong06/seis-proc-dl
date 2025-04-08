@@ -102,34 +102,36 @@ class TestDetectorDBConnection:
             "2013-09-06T18:00:00.00", datetimeformat
         ), "invalid channel offdate"
 
-    def test_add_detection_method_P(self, db_session):
-        session, patch_session = db_session  # Unpack session & patch function
-        db_conn = DetectorDBConnection(1)  # Create instance
+    @pytest.fixture
+    def db_session_with_detection_methods(self, db_session_with_3c_stat_loaded):
+        # Unpack session & patch function
+        session, db_conn, _, _ = db_session_with_3c_stat_loaded
 
-        patch_session(db_conn)  # Patch `self.Session` on the instance
+        db_conn.add_detection_method("TEST-P", "test method", "data/path/P", "P")
+        db_conn.add_detection_method("TEST-S", "test method", "data/path/S", "S")
 
-        db_conn.add_detection_method("TEST", "test method", "data/path", "P")
+        return session, db_conn
+
+    def test_add_detection_method_P(self, db_session_with_detection_methods):
+        session, db_conn = db_session_with_detection_methods
+
         assert (
             db_conn.p_detection_method_id is not None
         ), "detection_method id is not set"
         det_method = session.get(tables.DetectionMethod, db_conn.p_detection_method_id)
         assert det_method is not None, "No detection method returned"
-        assert det_method.name == "TEST", "invalid name"
+        assert det_method.name == "TEST-P", "invalid name"
         assert det_method.phase == "P", "invalid phase"
 
-    def test_add_detection_method_S(self, db_session):
-        session, patch_session = db_session  # Unpack session & patch function
-        db_conn = DetectorDBConnection(3)  # Create instance
+    def test_add_detection_method_S(self, db_session_with_detection_methods):
+        session, db_conn = db_session_with_detection_methods
 
-        patch_session(db_conn)  # Patch `self.Session` on the instance
-
-        db_conn.add_detection_method("TEST", "test method", "data/path", "S")
         assert (
             db_conn.s_detection_method_id is not None
         ), "detection_method id is not set"
         det_method = session.get(tables.DetectionMethod, db_conn.s_detection_method_id)
         assert det_method is not None, "No detection method returned"
-        assert det_method.name == "TEST", "invalid name"
+        assert det_method.name == "TEST-S", "invalid name"
         assert det_method.phase == "S", "invalid phase"
 
     def test_validate_channels_for_date_valid(self, db_session_with_3c_stat_loaded):
@@ -206,9 +208,9 @@ class TestDetectorDBConnection:
 
     @pytest.fixture
     def db_session_with_saved_contdatainfo(
-        self, db_session_with_3c_stat_loaded, contdatainfo_ex
+        self, db_session_with_detection_methods, contdatainfo_ex
     ):
-        session, db_conn, start, end = db_session_with_3c_stat_loaded
+        session, db_conn = db_session_with_detection_methods
         new_date, metadata_dict = contdatainfo_ex
         db_conn.save_data_info(new_date, metadata_dict)
         return session, db_conn
@@ -442,6 +444,28 @@ class TestDetectorDBConnection:
         # ContDataInfo is detached
         # print("persistent", inspect(db_conn.daily_info.contdatainfo).persistent)
         # print("detached", inspect(db_conn.daily_info.contdatainfo).detached)
+
+    def test_get_dldet_fk_ids_P(self, db_session_with_saved_contdatainfo):
+        session, db_conn = db_session_with_saved_contdatainfo
+
+        d = db_conn.get_dldet_fk_ids(is_p=True)
+        contdata = session.get(tables.DailyContDataInfo, d["data"])
+        assert contdata is not None, "contdatainfo not found"
+        assert contdata.id is not None, "contatainfo.id is not set"
+        p_det_meth = session.get(tables.DetectionMethod, d["method"])
+        assert p_det_meth is not None, "p detection_method is not set"
+        assert p_det_meth.phase == "P", "p detection_method phase is invalid"
+
+    def test_get_dldet_fk_ids_S(self, db_session_with_saved_contdatainfo):
+        session, db_conn = db_session_with_saved_contdatainfo
+
+        d = db_conn.get_dldet_fk_ids(is_p=False)
+        contdata = session.get(tables.DailyContDataInfo, d["data"])
+        assert contdata is not None, "contdatainfo not found"
+        assert contdata.id is not None, "contatainfo.id is not set"
+        s_det_meth = session.get(tables.DetectionMethod, d["method"])
+        assert s_det_meth is not None, "S detection_method is not set"
+        assert s_det_meth.phase == "S", "S detection_method phase is invalid"
 
 
 examples_dir = "/uufs/chpc.utah.edu/common/home/u1072028/PycharmProjects/seis_proc_dl/seis_proc_dl/pytests/example_files"
