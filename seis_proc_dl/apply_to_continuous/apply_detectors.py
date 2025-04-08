@@ -1416,7 +1416,7 @@ class DataLoader:
         meta_data = {}
         meta_data["network"] = stats["network"]
         meta_data["station"] = stats["station"]
-        meta_data["location"] = stats["location_code"]
+        meta_data["location"] = stats["location"]
         chan = stats["channel"]
         if three_channels:
             chan = f"{chan[0:2]}?"
