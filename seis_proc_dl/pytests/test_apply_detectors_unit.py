@@ -2222,7 +2222,7 @@ class TestPhaseDetector:
     def test_save_probs(self):
         model_file = f"{models_path}/oneCompPDetectorMEW_model_022.pt"
         pdet = apply_detectors.PhaseDetector(model_file, 1, "P", device="cpu")
-        post_probs = np.arange(1, 1001) / 1000
+        post_probs = np.arange(1, 1001) / 10
         outfile = f"{examples_dir}/postprobs"  # .mseed will be added in call
         stats = obspy.core.trace.Stats()
         stats.npts = 1000
@@ -2241,7 +2241,7 @@ class TestPhaseDetector:
         pdet = apply_detectors.PhaseDetector(
             model_file, 1, "P", device="cpu", post_probs_file_type="NP"
         )
-        post_probs = np.arange(1, 1001) / 1000
+        post_probs = np.arange(1, 1001) / 10
         outfile = f"{examples_dir}/postprobs"  # .mseed will be added in call
         stats = obspy.core.trace.Stats()
         stats.npts = 1000

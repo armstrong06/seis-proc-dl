@@ -967,6 +967,11 @@ class PhaseDetector:
             cont_post_probs, start_pad_npts, end_pad_npts, window_edge_npts
         )
 
+        # I have no idea why, but making the data int32 and not specifying the miniseed encoding makes the
+        # smallest output files (5.3 MB) compared to saving as using int32 encoding (34 MB) or int16 (17 MB).
+        # Must be some extra compression?
+        cont_post_probs = (cont_post_probs * 100).astype(np.int32)
+
         return cont_post_probs
 
     @staticmethod
@@ -1009,7 +1014,7 @@ class PhaseDetector:
         # I have no idea why, but making the data int32 and not specifying the miniseed encoding makes the
         # smallest output files (5.3 MB) compared to saving as using int32 encoding (34 MB) or int16 (17 MB).
         # Must be some extra compression?
-        tr.data = (post_probs * 100).astype(np.int32)
+        tr.data = post_probs.astype(np.int32)  # (post_probs * 100).astype(np.int32)
         tr.stats = Stats(stats)
         st += tr
         st.write(outfile, format="MSEED")  # , encoding="INT16")
@@ -1023,7 +1028,7 @@ class PhaseDetector:
             outfile (str): Path and name of the output file.
             post_probs (np.array): Flattened (1D) posterior probabilities
         """
-        data = (post_probs * 100).astype(np.uint8)
+        data = post_probs.astype(np.uint8)
         np.savez_compressed(outfile, probs=data)
 
     @staticmethod
