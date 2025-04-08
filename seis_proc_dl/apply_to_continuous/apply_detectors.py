@@ -96,6 +96,9 @@ class ApplyDetector:
         self.db_conn = None
         if config.database is not None:
             self.db_conn = DetectorDBConnection(ncomps, session_factory=session_factory)
+            self.p_det_thresh = config.database.p_det_thresh
+            self.p_pick_thresh = config.database.p_pick_thresh
+            self.db_pick_auth = config.database.pick_auth
             if ncomps == 1:
                 self.db_conn.add_detection_method(
                     config.database.det_method_1c_P.name,
@@ -116,6 +119,8 @@ class ApplyDetector:
                     path=config.paths.three_comp_s_model,
                     phase="S",
                 )
+                self.s_det_thresh = config.database.s_det_thresh
+                self.s_pick_thresh = config.database.s_pick_thresh
 
     def __init_1c(self):
         """Initialize the phase detector for 1 component P picker"""
