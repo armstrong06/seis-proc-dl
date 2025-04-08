@@ -37,11 +37,14 @@ class DetectorDBConnection:
     def __init__(self, ncomps, session_factory=None):
         self.Session = session_factory or database.Session
         self.ncomps = ncomps
+        
+        self.station_name = None
+        self.seed_code = None
+
         self.station_id = None
         self.channel_info = None
         self.p_detection_method_id = None
         self.s_detection_method_id = None
-        self.seed_code = None
         self.daily_info = None
 
     def get_channel_dates(self, date, stat, seed_code):
@@ -50,7 +53,7 @@ class DetectorDBConnection:
         if len(seed_code) == 3 and self.ncomps == 3:
             seed_code = seed_code[:-1]
         self.seed_code = seed_code
-
+        self.station_name = stat
         session = self.Session()
         with session.begin():
 
@@ -119,7 +122,7 @@ class DetectorDBConnection:
         with session.begin():
             # Get the Station object and the Channel objects for the appropriate date
             _, selected_channels = services.get_operating_channels_by_station_name(
-                session, self.station.sta, self.seed_code, date
+                session, self.station_name, self.seed_code, date
             )
 
         self.channel_info = ChannelInfo(selected_channels)
@@ -136,7 +139,7 @@ class DetectorDBConnection:
         session = self.Session()
         with session.begin():
             db_dict = {
-                "sta_id": self.station.id,
+                "sta_id": self.station_id,
                 "chan_pref": self.seed_code,
                 "ncomps": self.ncomps,
                 "date": date,
@@ -157,7 +160,7 @@ class DetectorDBConnection:
                 }
 
             contdatainfo = services.get_contdatainfo(
-                session, self.station.id, self.seed_code, self.ncomps, date
+                session, self.station_id, self.seed_code, self.ncomps, date
             )
 
             if contdatainfo is None:
