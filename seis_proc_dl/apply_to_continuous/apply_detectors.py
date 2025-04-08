@@ -99,7 +99,9 @@ class ApplyDetector:
             self.db_conn = DetectorDBConnection(ncomps, session_factory=session_factory)
             self.p_det_thresh = config.database.p_det_thresh
             self.p_pick_thresh = config.database.p_pick_thresh
-            self.db_pick_auth = config.database.pick_auth
+            self.wf_seconds_around_pick = config.database.wf_seconds_around_pick
+            self.db_pick_author = config.database.pick_auth
+            self.wf_proc_notes = "From Dataloader.continuous_data"
             if ncomps == 1:
                 self.db_conn.add_detection_method(
                     config.database.det_method_1c_P.name,
