@@ -84,7 +84,7 @@ class DetectorDBConnection:
         session = self.Session()
         with session.begin():
             services.upsert_detection_method(
-                session, name, phase=phase, desc=desc, path=path
+                session, name, phase=phase, details=desc, path=path
             )
             if phase == "P":
                 self.p_detection_method_id = services.get_detection_method(
