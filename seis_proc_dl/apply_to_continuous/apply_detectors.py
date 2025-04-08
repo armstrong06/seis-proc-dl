@@ -255,8 +255,10 @@ class ApplyDetector:
                 # Reset dataloader
                 self.dataloader.error_in_loading()
             else:
-                applied_successfully = self.apply_to_one_file(
-                    files, date_outdir, debug_N_examples=debug_N_examples
+                applied_successfully, p_post_probs, s_post_probs = (
+                    self.apply_to_one_file(
+                        files, date_outdir, debug_N_examples=debug_N_examples
+                    )
                 )
                 db_contdata_metadata = self.dataloader.metadata
                 db_gaps = self.dataloader.gaps
@@ -311,7 +313,7 @@ class ApplyDetector:
             outdir = self.outdir
 
         meta_outfile_name = self.dataloader.make_outfile_name(files[0], outdir)
-
+        p_post_probs, s_post_probs = None, None
         start_total = time.time()
         if self.ncomps == 1:
             load_succeeded = self.dataloader.load_1c_data(
@@ -334,11 +336,11 @@ class ApplyDetector:
                 # reset of loader will happen in apply_to_multiple_days
                 # TODO: is that a bad idea?
                 self.dataloader.write_data_info(meta_outfile_name)
-            return False
+            return False, p_post_probs, s_post_probs
 
         logger.debug(f"Time to load data: {time.time() - start_total:0.2f} s")
         start_P = time.time()
-        self.__apply_to_one_phase(
+        p_post_probs = self.__apply_to_one_phase(
             self.p_detector,
             self.p_proc_func,
             files[0],
@@ -348,7 +350,7 @@ class ApplyDetector:
         logger.debug(f"Total time to apply P model: {time.time() - start_P:0.2f} s")
         if self.ncomps == 3:
             start_S = time.time()
-            self.__apply_to_one_phase(
+            s_post_probs = self.__apply_to_one_phase(
                 self.s_detector,
                 self.dataloader.process_3c_S,
                 files[0],
@@ -363,7 +365,7 @@ class ApplyDetector:
         if self.db_conn is None:
             self.dataloader.write_data_info(meta_outfile_name)
         logger.debug(f"Total run time for day: {time.time() - start_total:0.2f} s")
-        return True
+        return True, p_post_probs, s_post_probs
 
     def __apply_to_one_phase(
         self, detector, proc_func, file_for_name, outdir, debug_N_examples=-1
@@ -409,6 +411,8 @@ class ApplyDetector:
         detector.save_post_probs(
             probs_outfile_name, cont_post_probs, self.dataloader.metadata
         )
+
+        return cont_post_probs
 
     def get_station_dates(self, year, stat, chan):
         """Read in station xml files and get the start and end dates for the appropriate channels.
