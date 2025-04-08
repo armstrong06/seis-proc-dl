@@ -1,8 +1,11 @@
 import sys
 import obspy
 import numpy as np
+from copy import deepcopy
+from datetime import timedelta
 from seis_proc_db import database
 from seis_proc_db import services
+from seis_proc_db.tables import Waveform, DailyContDataInfo
 
 # TODO: Think I need to not store ORM objects, use them in the same session only. Just store id's and get other info as needed.
 
@@ -249,11 +252,91 @@ class DetectorDBConnection:
             d["method"] = self.s_detection_method_id
         return d
 
-    def make_picks_from_detections():
+    def save_picks_from_detections(
+        self,
+        pick_thresh,
+        is_p,
+        auth,
+        continuous_data,
+        wf_filt_low,
+        wf_filt_high,
+        wf_proc_notes,
+        seconds_around_pick,
+    ):
         """Add detections above a certain threshold into the pick table, with the
         necessary additional information"""
-        pass
 
-    def save_waveforms():
-        """Extract waveforms around a pick from all channels and store in the database"""
-        pass
+        session = self.Session()
+        with session.begin():
+            # Comput the number of samples to grab on either side of the detection
+            sample_rate = session.get(
+                DailyContDataInfo, self.daily_info.contdatainfo_id
+            ).samp_rate
+            samples_around_pick = int(seconds_around_pick * sample_rate)
+
+            # Get ids
+            data_id = self.daily_info.contdatainfo_id
+            if is_p:
+                method_id = self.p_detection_method_id
+                phase = "P"
+            else:
+                method_id = self.s_detection_method_id
+                phase = "S"
+
+            # Get all detections for the contdatainfo and method greater than the pick_thresh
+            dldets = services.get_dldetections(
+                session, data_id, method_id, pick_thresh, phase=phase
+            )
+
+            # Iterate over the detections
+            for det in dldets:
+                # Create a pick from the detection
+                pick = services.insert_pick(
+                    session,
+                    self.station_id,
+                    self.seed_code,
+                    det.phase,
+                    det.time,
+                    auth,
+                    detid=det.id,
+                )
+
+                # Compute the relevant waveform information for all channels
+                i1 = det.sample - samples_around_pick
+                i2 = det.sample + samples_around_pick
+                pick_cont_data = deepcopy(continuous_data[i1:i2, :])
+                wf_start = det.time - timedelta(seconds=seconds_around_pick)
+                wf_end = det.time + timedelta(seconds=seconds_around_pick)
+
+                # Iterate over the different channels
+                for seed_code in self.channel_info.channel_ids.keys():
+                    chan_id = self.channel_info.channel_ids[seed_code]
+
+                    # Get the appropriate channel index of the data
+                    if self.ncomps == 1:
+                        chan_ind = 0
+                    elif seed_code in ["EHZ", "BHZ", "HHZ"]:
+                        chan_ind = 2
+                    elif seed_code in ["EHE", "EH1", "BHE", "BH1", "HHE", "HH1"]:
+                        chan_ind = 0
+                    elif seed_code in ["EHN", "EH2", "BHN", "BH2", "HHN", "HH2"]:
+                        chan_ind = 1
+                    else:
+                        raise ValueError("Something is wrong with the channel code")
+
+                    # Get just the channel of interest
+                    wf_data = pick_cont_data[:, chan_ind]
+
+                    # Create the waveform object
+                    wf = Waveform(
+                        data_id=data_id,
+                        chan_id=chan_id,
+                        filt_low=wf_filt_low,
+                        filt_high=wf_filt_high,
+                        data=wf_data,
+                        start=wf_start,
+                        end=wf_end,
+                        proc_notes=wf_proc_notes,
+                    )
+                    # Add the waveform to the pick
+                    pick.wfs.add(wf)
