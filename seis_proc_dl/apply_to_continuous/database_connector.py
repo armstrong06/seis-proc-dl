@@ -236,7 +236,18 @@ class DetectorDBConnection:
     def save_detections(self, detections):
         """Add detections above a threshold into the database. Do not add detections if
         they exist within a gap"""
-        pass
+
+        session = self.Session()
+        with session.begin():
+            services.bulk_insert_dldetections_with_gap_check(session, detections)
+
+    def get_dldet_fk_ids(self, is_p=True):
+        d = {"data": self.daily_info.contdatainfo_id}
+        if is_p:
+            d["method"] = self.p_detection_method_id
+        else:
+            d["method"] = self.s_detection_method_id
+        return d
 
     def make_picks_from_detections():
         """Add detections above a certain threshold into the pick table, with the
