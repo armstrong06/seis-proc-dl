@@ -323,6 +323,16 @@ class ApplyDetector:
                 db_ids=self.db_conn.get_dldet_fk_ids(),
             )
         )
+        self.db_conn.save_picks_from_detections(
+            pick_thresh=self.p_pick_thresh,
+            is_p=True,
+            auth=self.auth,
+            continuous_data=self.dataloader.continuous_data,
+            wf_filt_low=None,
+            wf_filt_high=None,
+            wf_proc_notes=self.wf_proc_notes,
+            seconds_around_pick=self.wf_seconds_around_pick,
+        )
 
         # Save S detections
         if self.ncomps == 3:
@@ -333,6 +343,17 @@ class ApplyDetector:
                     thresh=self.s_det_thresh,
                     db_ids=self.db_conn.get_dldet_fk_ids(is_p=False),
                 )
+            )
+
+            self.db_conn.save_picks_from_detections(
+                pick_thresh=self.s_pick_thresh,
+                is_p=False,
+                auth=self.auth,
+                continuous_data=self.dataloader.continuous_data,
+                wf_filt_low=None,
+                wf_filt_high=None,
+                wf_proc_notes=self.wf_proc_notes,
+                seconds_around_pick=self.wf_seconds_around_pick,
             )
 
     # TODO: This name seems inappropriate (apply_to_one_day?)
