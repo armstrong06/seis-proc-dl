@@ -34,7 +34,7 @@ class DetectorDBConnection:
     def __init__(self, ncomps, session_factory=None):
         self.Session = session_factory or database.Session
         self.ncomps = ncomps
-        self.station = None
+        self.station_id = None
         self.channel_info = None
         self.p_detection_method_id = None
         self.s_detection_method_id = None
@@ -67,7 +67,7 @@ class DetectorDBConnection:
             return None, None
 
         # Store the station
-        self.station = selected_stat
+        self.station_id = selected_stat.id
         # Store the current channels
         self.channel_info = ChannelInfo(selected_channels)
 
