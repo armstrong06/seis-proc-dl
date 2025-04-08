@@ -275,9 +275,14 @@ class ApplyDetector:
 
             # TODO: save the continuous data here
             if self.db_conn is not None:
-                self.db_conn.save_data_info(date, db_contdata_metadata, error=error)
-                # TODO: format and save gaps
-
+                self.save_daily_results_in_db(
+                    date,
+                    db_contdata_metadata,
+                    db_gaps,
+                    error,
+                    p_post_probs,
+                    s_post_probs,
+                )
             date += delta
 
         if self.db_conn is None:
@@ -297,6 +302,35 @@ class ApplyDetector:
                     chan,
                     insufficient_data_dates,
                 )
+
+    def save_daily_results_in_db(
+        self, date, metadata, gaps, error, p_post_probs, s_post_probs
+    ):
+        # Add row to contdatainfo
+        self.db_conn.save_data_info(date, metadata, error=error)
+        # Add gaps
+        self.db_conn.format_and_save_gaps(gaps)
+
+        # Save P Detections
+        self.db_conn.save_detections(
+            self.get_detections_from_post_probs(
+                p_post_probs,
+                "P",
+                thresh=self.p_det_thresh,
+                db_ids=self.db_conn.get_dldet_fk_ids(),
+            )
+        )
+
+        # Save S detections
+        if self.ncomps == 3:
+            self.db_conn.save_detections(
+                self.get_detections_from_post_probs(
+                    s_post_probs,
+                    "S",
+                    thresh=self.s_det_thresh,
+                    db_ids=self.db_conn.get_dldet_fk_ids(is_p=False),
+                )
+            )
 
     # TODO: This name seems inappropriate (apply_to_one_day?)
     def apply_to_one_file(self, files, outdir=None, debug_N_examples=-1):
