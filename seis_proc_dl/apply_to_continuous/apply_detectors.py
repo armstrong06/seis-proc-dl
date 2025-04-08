@@ -16,6 +16,7 @@ import openvino.properties.hint as hints
 import openvino.properties as props
 import time
 
+
 sys.path.append(
     "/uufs/chpc.utah.edu/common/home/koper-group4/bbaker/mlmodels/intel_cpu_build"
 )
@@ -47,7 +48,7 @@ class ApplyDetector:
             ncomps (int): The number of components for the phase detector and data (1 or 3).
             config (object): dictionary defining information needed for the PhaseDetector and DataLoader,
             and path information
-            session_factory: SQLAlchemy object from produced by a sessionmaker. needed when using a test database 
+            session_factory: SQLAlchemy object from produced by a sessionmaker. needed when using a test database
                 in DetectorDBConnection
 
         Raises:
@@ -1142,6 +1143,9 @@ class DataLoader:
             expected_file_duration_s=expected_file_duration_s,
         )
 
+        # chan_E = st_E[0].stats.channel
+        # chan_N = st_N[0].stats.channel
+        # chan_Z = st_Z[0].stats.channel
         assert np.isin(
             st_E[0].stats.channel, ["EHE", "EH1", "BHE", "BH1", "HHE", "HH1"]
         ), "E file is incorrect"
@@ -1172,6 +1176,7 @@ class DataLoader:
 
         # Keep all gap information and store metadata - regardless if load failed
         gaps = gaps_E + gaps_N + gaps_Z
+        # gaps = {"Z": gaps_Z, "E/1": gaps_E, "N/2": gaps_N}
         self.gaps = gaps
         self.store_metadata(st_E[0].stats)
         # If any loads failed, exit
