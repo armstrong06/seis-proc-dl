@@ -953,7 +953,7 @@ class TestApplyDetector:
         # Set value at thresh-end_thresh_diff for the end of the pick window
         Y[110] = 0.85
         detections = apply_detectors.ApplyDetector.get_detections_from_post_probs(
-            Y, thresh=0.9
+            Y, thresh=0.9, phase="P"
         )
         assert len(detections) == 1, "incorrect number of detections"
         assert detections[0]["sample"] == 105, "Invalid sample"
@@ -967,7 +967,7 @@ class TestApplyDetector:
             Y[i + 10] = 0.98
 
         detections = apply_detectors.ApplyDetector.get_detections_from_post_probs(
-            Y, thresh=0.9
+            Y, thresh=0.9, phase="P"
         )
         assert len(detections) == 10, "incorrect number of detections"
         assert detections[0]["sample"] == 10, "Invalid sample"
