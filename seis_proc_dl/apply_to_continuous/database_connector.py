@@ -37,7 +37,7 @@ class DetectorDBConnection:
     def __init__(self, ncomps, session_factory=None):
         self.Session = session_factory or database.Session
         self.ncomps = ncomps
-        
+
         self.station_name = None
         self.seed_code = None
 
@@ -272,10 +272,8 @@ class DetectorDBConnection:
         session = self.Session()
         with session.begin():
             # Comput the number of samples to grab on either side of the detection
-            sample_rate = session.get(
-                DailyContDataInfo, self.daily_info.contdatainfo_id
-            ).samp_rate
-            samples_around_pick = int(seconds_around_pick * sample_rate)
+            cdi = session.get(DailyContDataInfo, self.daily_info.contdatainfo_id)
+            samples_around_pick = int(seconds_around_pick * cdi.samp_rate)
 
             # Get ids
             data_id = self.daily_info.contdatainfo_id
@@ -306,10 +304,33 @@ class DetectorDBConnection:
 
                 # Compute the relevant waveform information for all channels
                 i1 = det.sample - samples_around_pick
-                i2 = det.sample + samples_around_pick
+                i2 = det.sample + samples_around_pick + 1
                 pick_cont_data = deepcopy(continuous_data[i1:i2, :])
-                wf_start = det.time - timedelta(seconds=seconds_around_pick)
-                wf_end = det.time + timedelta(seconds=seconds_around_pick)
+                wf_start = cdi.proc_start + timedelta(seconds=(i1 * cdi.dt))
+                wf_end = cdi.proc_start + timedelta(seconds=(i2 * cdi.dt))
+                # print(wf_end - det.time)
+                # print(det.time - wf_start)
+                # expected_start = det.time - timedelta(seconds=seconds_around_pick)
+                # expected_end = det.time + timedelta(
+                #     seconds=seconds_around_pick + cdi.dt
+                # )
+                # datetimeformat = "%Y-%m-%dT%H:%M:%S.%f"
+                # print(
+                #     "START",
+                #     expected_start.strftime(datetimeformat),
+                #     wf_start.strftime(datetimeformat),
+                # )
+                # print(
+                #     "END",
+                #     expected_end.strftime(datetimeformat),
+                #     wf_end.strftime(datetimeformat),
+                # )
+                # assert (
+                #     wf_start - expected_start
+                # ).microseconds == 0, "wf_start different than expected"
+                # assert (
+                #     wf_end - expected_end
+                # ).microseconds == 0, "wf_end different than expected"
 
                 # Iterate over the different channels
                 for seed_code in self.channel_info.channel_ids.keys():
@@ -328,7 +349,7 @@ class DetectorDBConnection:
                         raise ValueError("Something is wrong with the channel code")
 
                     # Get just the channel of interest
-                    wf_data = pick_cont_data[:, chan_ind]
+                    wf_data = pick_cont_data[:, chan_ind].tolist()
 
                     # Create the waveform object
                     wf = Waveform(
