@@ -2,8 +2,9 @@ import pytest
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import engine
 from sqlalchemy import inspect
-from datetime import datetime
+from datetime import datetime, timedelta
 from copy import deepcopy
+import numpy as np
 from seis_proc_dl.apply_to_continuous.database_connector import DetectorDBConnection
 from seis_proc_dl.apply_to_continuous.apply_detectors import ApplyDetector
 from seis_proc_db.database import engine
@@ -466,6 +467,139 @@ class TestDetectorDBConnection:
         s_det_meth = session.get(tables.DetectionMethod, d["method"])
         assert s_det_meth is not None, "S detection_method is not set"
         assert s_det_meth.phase == "S", "S detection_method phase is invalid"
+
+    @pytest.fixture
+    def detections_ex(self):
+        d1 = {"sample": 1000, "height": 90, "width": 20}
+        d2 = {"sample": 20000, "height": 70, "width": 30}
+        d3 = {"sample": 30000, "height": 80, "width": 25}
+
+        return deepcopy([d1, d2, d3])
+
+    @pytest.fixture
+    def db_session_with_P_dldets(
+        self, db_session_with_saved_contdatainfo, detections_ex
+    ):
+        session, db_conn = db_session_with_saved_contdatainfo
+        det_list = detections_ex
+        ids = db_conn.get_dldet_fk_ids(is_p=True)
+        for det in det_list:
+            det["phase"] = "P"
+            det["data_id"] = ids["data"]
+            det["method_id"] = ids["method"]
+
+        db_conn.save_detections(det_list)
+
+        return session, db_conn
+
+    def test_save_detections(self, db_session_with_P_dldets):
+        session, db_conn = db_session_with_P_dldets
+        ids = db_conn.get_dldet_fk_ids(is_p=True)
+        selected_dets = services.get_dldetections(
+            session, ids["data"], ids["method"], 0.0, phase="P"
+        )
+
+        assert len(selected_dets) == 3, "incorrect number of detections"
+
+    def test_save_picks_from_detections(self, db_session_with_P_dldets):
+        session, db_conn = db_session_with_P_dldets
+
+        pick_thresh = 75
+        auth = "TEST"
+        wf_filt_low = None
+        wf_filt_high = None
+        wf_proc_notes = "TEST DATA"
+        seconds_around_pick = 10
+
+        cont_data = np.zeros((50000, 3))
+        samples = int(seconds_around_pick * 100)
+        cont_data[1000 - samples : 1000 + samples + 1] = 1
+        cont_data[20000 - samples : 20000 + samples + 1] = 2
+        cont_data[30000 - samples : 30000 + samples + 1] = 3
+
+        db_conn.save_picks_from_detections(
+            pick_thresh=pick_thresh,
+            is_p=True,
+            auth=auth,
+            continuous_data=cont_data,
+            wf_filt_low=None,
+            wf_filt_high=None,
+            wf_proc_notes=wf_proc_notes,
+            seconds_around_pick=seconds_around_pick,
+        )
+
+        picks = services.get_picks(session, db_conn.station_id, "HH", phase="P")
+        assert len(picks) == 2, "incorrect number of picks"
+
+        for pick in picks:
+            det = session.get(tables.DLDetection, pick.detid)
+            assert det.height > pick_thresh
+            contdatainfo = session.get(tables.DailyContDataInfo, det.data_id)
+
+            assert (
+                pick.ptime - timedelta(seconds=(det.sample / contdatainfo.samp_rate))
+                == contdatainfo.proc_start
+            ), "invalid pick time"
+
+            assert pick.auth == "TEST", "invalid author"
+            assert pick.phase == "P"
+            assert pick.chan_pref == "HH"
+            assert pick.sta_id == db_conn.station_id
+            assert pick.snr is None
+            assert pick.amp is None
+
+            wf = services.get_waveforms(session, pick.id)
+            assert len(wf) == 3, "invalid wf size"
+
+            assert det.sample == 1000 or det.sample == 30000, "incorrect dets saved"
+            if det.sample == 1000:
+                assert np.all(
+                    np.array(wf[0].data) == 1
+                ), "invalid data for wf[0] when det.sample == 1000"
+                assert np.all(
+                    np.array(wf[1].data) == 1
+                ), "invalid data for wf[1] when det.sample == 1000"
+                assert np.all(
+                    np.array(wf[2].data) == 1
+                ), "invalid data for wf[2] when det.sample == 1000"
+            elif det.sample == 30000:
+                assert np.all(
+                    np.array(wf[0].data) == 3
+                ), "invalid data for wf[0] when det.sample == 30000"
+                assert np.all(
+                    np.array(wf[1].data) == 3
+                ), "invalid data for wf[1] when det.sample == 30000"
+                assert np.all(
+                    np.array(wf[2].data) == 3
+                ), "invalid data for wf[2] when det.sample == 30000"
+
+            assert len(wf[0].data) == samples * 2 + 1, "invalid data length for wf[0]"
+            assert len(wf[1].data) == samples * 2 + 1, "invalid data length for wf[1]"
+            assert len(wf[2].data) == samples * 2 + 1, "invalid data length for wf[2]"
+            assert wf[0].start == pick.ptime - timedelta(
+                seconds=seconds_around_pick
+            ), "invalid start for wf[0]"
+            assert wf[1].start == pick.ptime - timedelta(
+                seconds=seconds_around_pick
+            ), "invalid start for wf[1]"
+            assert wf[2].start == pick.ptime - timedelta(
+                seconds=seconds_around_pick
+            ), "invalid start for wf[2]"
+            assert wf[0].end == pick.ptime + timedelta(
+                seconds=seconds_around_pick + 0.01
+            ), "invalid end for wf[0]"
+            assert wf[1].end == pick.ptime + timedelta(
+                seconds=seconds_around_pick + 0.01
+            ), "invalid end for wf[1]"
+            assert wf[2].end == pick.ptime + timedelta(
+                seconds=seconds_around_pick + 0.01
+            ), "invalid end for wf[2]"
+            assert wf[0].filt_low is None
+            assert wf[1].filt_low is None
+            assert wf[2].filt_low is None
+            assert wf[0].filt_high is None
+            assert wf[1].filt_high is None
+            assert wf[2].filt_high is None
 
 
 examples_dir = "/uufs/chpc.utah.edu/common/home/u1072028/PycharmProjects/seis_proc_dl/seis_proc_dl/pytests/example_files"
