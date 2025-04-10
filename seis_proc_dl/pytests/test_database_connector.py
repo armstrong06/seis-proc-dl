@@ -635,6 +635,12 @@ apply_detector_config = {
         "det_method_1c_P": {"name": "TEST_1C_UNET", "desc": "test for 1C P dets"},
         "det_method_3c_P": {"name": "TEST_3C_UNET", "desc": "test for 3C P dets"},
         "det_method_3c_S": {"name": "TEST_3C_UNET", "desc": "test for 3C S dets"},
+        "p_det_thresh": 50,
+        "s_det_thresh": 50,
+        "p_pick_thresh": 75,
+        "s_pick_thresh": 75,
+        "wf_seconds_around_pick": 10,
+        "pick_author": "SPDL",
     },
 }
 
@@ -653,6 +659,12 @@ class TestApplyDetectorDB:
         assert (
             applier.db_conn.s_detection_method_id is not None
         ), "s detection method not set"
+        assert applier.p_det_thresh == 50
+        assert applier.s_det_thresh == 50
+        assert applier.p_pick_thresh == 75
+        assert applier.s_pick_thresh == 75
+        assert applier.wf_seconds_around_pick == 10.0
+        assert applier.db_pick_author == "SPDL"
 
     def test_init_1c(self, db_session):
         session, _ = db_session
@@ -667,3 +679,9 @@ class TestApplyDetectorDB:
         assert (
             applier.db_conn.s_detection_method_id is None
         ), "s detection method should not set"
+        assert applier.p_det_thresh == 50
+        assert applier.s_det_thresh is None
+        assert applier.p_pick_thresh == 75
+        assert applier.s_pick_thresh is None
+        assert applier.wf_seconds_around_pick == 10.0
+        assert applier.db_pick_author == "SPDL"
