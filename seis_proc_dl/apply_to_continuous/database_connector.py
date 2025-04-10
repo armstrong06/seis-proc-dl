@@ -220,7 +220,7 @@ class DetectorDBConnection:
             else:
                 previous = merged[-1]
                 # Compare the start time of the current gap to the end time of the last one
-                gap_delta = (current[1] - previous["end"]).seconds
+                gap_delta = (current[1] - previous["end"]).total_seconds()
                 assert gap_delta > 0, ValueError("Two adjacent gaps are overlapping")
                 if gap_delta < min_gap_sep_seconds:
                     previous["end"] = current[2]
