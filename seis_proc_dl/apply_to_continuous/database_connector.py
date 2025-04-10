@@ -250,6 +250,9 @@ class DetectorDBConnection:
         """Add detections above a threshold into the database. Do not add detections if
         they exist within a gap"""
 
+        if len(detections) == 0:
+            return
+
         session = self.Session()
         with session.begin():
             services.bulk_insert_dldetections_with_gap_check(session, detections)
