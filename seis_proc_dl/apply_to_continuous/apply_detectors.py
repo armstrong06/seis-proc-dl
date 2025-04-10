@@ -518,6 +518,7 @@ class ApplyDetector:
             tuple: (start Datetime, end DateTime)
         """
         file_name = os.path.join(self.data_dir, str(year), f"stations/*{stat}.xml")
+        logger.debug(f"Attempting to load station xml files {file_name}...")
         files = glob.glob(file_name)
 
         if len(files) != 1:
@@ -716,6 +717,8 @@ class ApplyDetector:
                 i1 = end_win
             else:
                 i1 += window_size
+
+        logger.info(f"{len(detections)} potential detections for {phase}.")
 
         return detections
 
