@@ -5,6 +5,7 @@ from sqlalchemy import inspect
 from datetime import datetime, timedelta
 from copy import deepcopy
 import numpy as np
+from obspy.core import UTCDateTime as UTC
 from seis_proc_dl.apply_to_continuous.database_connector import DetectorDBConnection
 from seis_proc_dl.apply_to_continuous.apply_detectors import ApplyDetector
 from seis_proc_db.database import engine
@@ -71,36 +72,21 @@ def contdatainfo_ex():
 @pytest.fixture
 def simple_gaps_ex():
     gap1 = [
-        # "Net",
-        # "Stat",
-        # "",
         "HHE",
         datetime.strptime("2013-03-31T01:00:00.00", datetimeformat),
         datetime.strptime("2013-03-31T02:00:00.00", datetimeformat),
-        # 777,
-        # 777,
     ]
 
     gap2 = [
-        # "Net",
-        # "Stat",
-        # "",
         "HHE",
         datetime.strptime("2013-03-31T03:00:00.00", datetimeformat),
         datetime.strptime("2013-03-31T04:00:00.00", datetimeformat),
-        # 777,
-        # 777,
     ]
 
     gap3 = [
-        # "Net",
-        # "Stat",
-        # "",
         "HHE",
         datetime.strptime("2013-03-31T05:00:00.00", datetimeformat),
         datetime.strptime("2013-03-31T06:00:00.00", datetimeformat),
-        # 777,
-        # 777,
     ]
 
     return deepcopy([gap1, gap2, gap3])
@@ -121,38 +107,23 @@ def close_gaps_ex():
 
     # 1 second between gap1 and gap2
     gap2 = [
-        # "Net",
-        # "Stat",
-        # "",
         "HHZ",
         datetime.strptime("2013-03-31T02:00:01.00", datetimeformat),
         datetime.strptime("2013-03-31T02:00:11.00", datetimeformat),
-        # 777,
-        # 777,
     ]
 
     # 1 second between gap2 and gap3
     gap3 = [
-        # "Net",
-        # "Stat",
-        # "",
         "HHZ",
         datetime.strptime("2013-03-31T02:00:12.00", datetimeformat),
         datetime.strptime("2013-03-31T02:00:22.00", datetimeformat),
-        # 777,
-        # 777,
     ]
 
     # 5.0 seconds between gap3 and gap4
     gap4 = [
-        # "Net",
-        # "Stat",
-        # "",
         "HHZ",
         datetime.strptime("2013-03-31T02:00:27.00", datetimeformat),
         datetime.strptime("2013-03-31T02:00:37.00", datetimeformat),
-        # 777,
-        # 777,
     ]
 
     return deepcopy([gap1, gap2, gap3, gap4])
@@ -627,14 +598,14 @@ apply_detector_config = {
         "post_probs_file_type": "MSEED",
     },
     "dataloader": {
-        "store_N_seconds": 10,
+        "store_N_seconds": 0,
         # "expected_file_duration_s":3600,
         "min_signal_percent": 0,
     },
     "database": {
-        "det_method_1c_P": {"name": "TEST_1C_UNET", "desc": "test for 1C P dets"},
-        "det_method_3c_P": {"name": "TEST_3C_UNET", "desc": "test for 3C P dets"},
-        "det_method_3c_S": {"name": "TEST_3C_UNET", "desc": "test for 3C S dets"},
+        "det_method_1c_P": {"name": "TEST_1C_P_UNET", "desc": "test for 1C P dets"},
+        "det_method_3c_P": {"name": "TEST_3C_P_UNET", "desc": "test for 3C P dets"},
+        "det_method_3c_S": {"name": "TEST_3C_S_UNET", "desc": "test for 3C S dets"},
         "p_det_thresh": 50,
         "s_det_thresh": 50,
         "p_pick_thresh": 75,
@@ -688,3 +659,119 @@ class TestApplyDetectorDB:
         assert applier.wf_seconds_around_pick == 10.0
         assert applier.db_pick_author == "SPDL"
         assert applier.min_gap_sep_seconds == 5
+
+    @pytest.fixture
+    def simple_obspy_gaps_ex(self):
+        gap1 = [
+            "Net",
+            "Stat",
+            "",
+            "HHZ",
+            UTC("2013-03-31T01:00:00.00"),
+            UTC("2013-03-31T02:00:00.00"),
+            777,
+            777,
+        ]
+
+        gap2 = [
+            "Net",
+            "Stat",
+            "",
+            "HHZ",
+            UTC("2013-03-31T03:00:00.00"),
+            UTC("2013-03-31T04:00:00.00"),
+            777,
+            777,
+        ]
+
+        gap3 = [
+            "Net",
+            "Stat",
+            "",
+            "HHZ",
+            UTC("2013-03-31T05:00:00.00"),
+            UTC("2013-03-31T06:00:00.00"),
+            777,
+            777,
+        ]
+
+        return deepcopy([gap1, gap2, gap3])
+
+    def test_save_daily_results_in_db_1C(
+        self, db_session, contdatainfo_ex, simple_obspy_gaps_ex
+    ):
+        session, _ = db_session
+        applier = ApplyDetector(
+            1, apply_detector_config, session_factory=lambda: session
+        )
+
+        date, metadata = contdatainfo_ex
+        gaps = simple_obspy_gaps_ex
+        error = None
+
+        continuous_data = np.zeros((metadata["npts"], 1))
+        p_post_probs = np.zeros(metadata["npts"])
+        p_post_probs[10000] = 90
+        p_post_probs[25000] = 80
+        p_post_probs[40000] = 75
+        p_post_probs[56000] = 50
+        p_post_probs[75000] = 45
+
+        applier.db_conn.get_channel_dates(date, "YNR", "HHZ")
+
+        applier.save_daily_results_in_db(
+            date, continuous_data, metadata, gaps, error, p_post_probs
+        )
+
+        # check the metadata
+        assert (
+            applier.db_conn.daily_info.date == date
+        ), "invalid date in DailyDetectionDBInfo"
+        assert (
+            applier.db_conn.daily_info.contdatainfo_id is not None
+        ), "contdatainfo id not set"
+        contdatainfo = session.get(
+            tables.DailyContDataInfo, applier.db_conn.daily_info.contdatainfo_id
+        )
+        assert inspect(contdatainfo).persistent, "contdatainfo not persistent"
+        assert contdatainfo is not None, "contdatainfo not set"
+        assert contdatainfo.chan_pref == "HHZ", "invalid chan_pref"
+        assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
+        assert contdatainfo.proc_start == datetime.strptime(
+            "2013-03-31T00:00:00.00", datetimeformat
+        ), "invalid proc_start"
+
+        # check the gaps
+        gaps_Z = services.get_gaps(
+            session,
+            applier.db_conn.channel_info.channel_ids["HHZ"],
+            applier.db_conn.daily_info.contdatainfo_id,
+        )
+        assert len(gaps_Z) == 3, "Incorrect number of gaps on HHZ channel"
+
+        # check the detections
+        det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=True)
+        inserted_dets = services.get_dldetections(
+            session, det_fk_ids["data"], det_fk_ids["method"], 0.0, phase="P"
+        )
+        assert len(inserted_dets) == 4, "incorrect number of detections inserted"
+
+        # check the picks
+        picks = services.get_picks(
+            session, applier.db_conn.station_id, "HHZ", phase="P"
+        )
+        assert len(picks) == 3, "incorrect number of picks"
+
+        # check the waveforms
+        for pick in picks:
+            wf = services.get_waveforms(session, pick.id)
+            assert len(wf) == 1, "invalid wf size"
+
+    def test_apply_to_multiple_days_dumb(self, db_session):
+        session, _ = db_session
+        applier = ApplyDetector(
+            1, apply_detector_config, session_factory=lambda: session
+        )
+        applier.apply_to_multiple_days(
+            "YWB", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
+        )

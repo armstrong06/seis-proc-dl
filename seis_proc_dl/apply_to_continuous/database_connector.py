@@ -302,6 +302,9 @@ class DetectorDBConnection:
 
             # Iterate over the detections
             for det in dldets:
+                # TODO: Check if the detection is on the previous day, if so need to check
+                # for existing picks and handle accordingly
+
                 # Create a pick from the detection
                 pick = services.insert_pick(
                     session,
