@@ -16,7 +16,6 @@ class Config:
     def from_json(cls, cfg):
         """Creates config from json"""
         params = json.loads(json.dumps(cfg), object_hook=HelperObject)
-        print("CFG PARAMS", params)
         if "database" in params.__dict__.keys():
             init = cls(params.unet, params.paths, params.dataloader, params.database)
         else:
