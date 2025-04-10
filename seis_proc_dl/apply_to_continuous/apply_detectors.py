@@ -321,12 +321,13 @@ class ApplyDetector:
         # Add row to contdatainfo
         self.db_conn.save_data_info(date, metadata, error=error)
         # Add gaps
-        self.db_conn.format_and_save_gaps(
-            self.dataloader.simplify_gaps(gaps), self.min_gap_sep_seconds
-        )
-        logger.debug(
-            f"Time to store contdatainfo and gaps: {time.time() - start_data:0.2f} s"
-        )
+        if gaps is not None and len(gaps) > 0:
+            self.db_conn.format_and_save_gaps(
+                self.dataloader.simplify_gaps(gaps), self.min_gap_sep_seconds
+            )
+            logger.debug(
+                f"Time to store contdatainfo and gaps: {time.time() - start_data:0.2f} s"
+            )
 
         start_dets = time.time()
         # Save P Detections

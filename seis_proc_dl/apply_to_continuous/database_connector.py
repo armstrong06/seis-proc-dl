@@ -193,6 +193,9 @@ class DetectorDBConnection:
         into one 'effective' gap. gaps should be a list of lists containing the gap seed_code, startime and endtime
         """
 
+        if len(gaps) == 0:
+            return
+
         assert len(gaps[0]) == 3, "Expected just three values in the gap"
 
         formatted_gaps = []
