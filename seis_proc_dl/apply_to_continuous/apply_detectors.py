@@ -102,6 +102,7 @@ class ApplyDetector:
             self.wf_seconds_around_pick = config.database.wf_seconds_around_pick
             self.db_pick_author = config.database.pick_author
             self.wf_proc_notes = "From Dataloader.continuous_data"
+            self.min_gap_sep_seconds = config.database.min_gap_separation_seconds
             self.s_det_thresh = None
             self.s_pick_thresh = None
             if ncomps == 1:
@@ -313,7 +314,9 @@ class ApplyDetector:
         # Add row to contdatainfo
         self.db_conn.save_data_info(date, metadata, error=error)
         # Add gaps
-        self.db_conn.format_and_save_gaps(self.dataloader.simplify_gaps(gaps))
+        self.db_conn.format_and_save_gaps(
+            self.dataloader.simplify_gaps(gaps), self.min_gap_sep_seconds
+        )
 
         # Save P Detections
         self.db_conn.save_detections(

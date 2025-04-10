@@ -641,6 +641,7 @@ apply_detector_config = {
         "s_pick_thresh": 75,
         "wf_seconds_around_pick": 10,
         "pick_author": "SPDL",
+        "min_gap_separation_seconds": 5,
     },
 }
 

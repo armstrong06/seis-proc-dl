@@ -185,7 +185,7 @@ class DetectorDBConnection:
 
         self.daily_info.contdatainfo_id = contdatainfo.id
 
-    def format_and_save_gaps(self, gaps, min_gap_sep):
+    def format_and_save_gaps(self, gaps, min_gap_sep_seconds):
         """Add gaps into the table. If many gaps in the same time period, combine them
         into one 'effective' gap. gaps should be a list of lists containing the gap seed_code, startime and endtime
         """
@@ -201,14 +201,16 @@ class DetectorDBConnection:
             # chan_starts = gap_starts[chan_inds]
             # chan_ends = gap_ends[chan_inds]
             # Format the gaps for inserting
-            chan_gaps = self.format_channel_gaps(chan_gaps, chan_id, min_gap_sep)
+            chan_gaps = self.format_channel_gaps(
+                chan_gaps, chan_id, min_gap_sep_seconds
+            )
             formatted_gaps += chan_gaps
 
         session = self.Session()
         with session.begin():
             services.insert_gaps(session, formatted_gaps)
 
-    def format_channel_gaps(self, gaps, chan_id, min_gap_sep):
+    def format_channel_gaps(self, gaps, chan_id, min_gap_sep_seconds):
         gaps.sort(key=lambda x: x[1])
         data_id = self.daily_info.contdatainfo_id
         merged = []
@@ -220,7 +222,7 @@ class DetectorDBConnection:
                 # Compare the start time of the current gap to the end time of the last one
                 gap_delta = (current[1] - previous["end"]).seconds
                 assert gap_delta > 0, ValueError("Two adjacent gaps are overlapping")
-                if gap_delta < min_gap_sep:
+                if gap_delta < min_gap_sep_seconds:
                     previous["end"] = current[2]
                     previous["avail_sig_sec"] += gap_delta
                 else:
@@ -233,7 +235,9 @@ class DetectorDBConnection:
         d = {
             "data_id": data_id,
             "chan_id": chan_id,
+            # (gap[1] if type(gap[1]) == datetime else gap[1].datetime),
             "start": gap[1],
+            # (gap[2] if type(gap[2]) == datetime else gap[2].datetime),
             "end": gap[2],
             "avail_sig_sec": 0.0,
         }
