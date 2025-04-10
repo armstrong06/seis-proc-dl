@@ -318,6 +318,10 @@ class DetectorDBConnection:
                 # Check if the detection is on the previous day, if so need to check
                 # for existing picks and handle accordingly
                 if det.time.date() < cdi.date:
+                    assert (
+                        cdi.prev_appended
+                    ), "Previous data was not appended, yet there is a detection on the previous day..."
+
                     # Check if there are any picks with a ptime close to det.time
                     close_picks = services.get_picks(
                         session,
@@ -328,16 +332,20 @@ class DetectorDBConnection:
                         max_time=det.time + timedelta(seconds=0.1),
                     )
 
-                    if len(close_picks) == 0: 
+                    if len(close_picks) == 0:
                         continue
                     if len(close_picks) > 1:
-                        raise NotImplementedError("There are multiple close picks in the previous day's data...")
-                    
+                        raise NotImplementedError(
+                            "There are multiple close picks in the previous day's data..."
+                        )
+
                     # There's only one pick
                     pick = close_picks[0]
                     prev_data_id = session.get(DLDetection, pick.detid).data_id
                     # Get the waveforms for these picks
-                    close_wfs = services.get_waveforms(session, pick.id, data_id=prev_data_id)
+                    close_wfs = services.get_waveforms(
+                        session, pick.id, data_id=prev_data_id
+                    )
 
                     # Only update the pick and waveforms if the waveforms would have more continuous data available
                     prev_inserted_npts = len(close_wfs[0].data)
@@ -348,7 +356,7 @@ class DetectorDBConnection:
                     pick.ptime = det.time
                     pick.detid = det.id
 
-                    # Update the waveforms assigned to the pick 
+                    # Update the waveforms assigned to the pick
                     for wf in close_wfs:
                         seed_code = session.get(Channel, wf.chan_id).seed_code
                         # Get the appropriate channel index of the data
@@ -360,7 +368,7 @@ class DetectorDBConnection:
                         wf.start = wf_start
                         wf.end = wf_end
                         wf.data_id = data_id
-                        # TODO: Might want to update this in case the channel switched between days... 
+                        # TODO: Might want to update this in case the channel switched between days...
                         # But I think it makes sense to still assign it to the previous day's channel
                         # wf.chan_id = self.channel_info.channel_ids[seed_code]
 
@@ -437,5 +445,5 @@ class DetectorDBConnection:
             chan_ind = 1
         else:
             raise ValueError("Something is wrong with the channel code")
-        
+
         return chan_ind
