@@ -5,7 +5,7 @@ from copy import deepcopy
 from datetime import timedelta
 from seis_proc_db import database
 from seis_proc_db import services
-from seis_proc_db.tables import Waveform, DailyContDataInfo
+from seis_proc_db.tables import Waveform, DailyContDataInfo, Channel, DLDetection
 
 # TODO: Think I need to not store ORM objects, use them in the same session only. Just store id's and get other info as needed.
 
@@ -281,11 +281,6 @@ class DetectorDBConnection:
 
         session = self.Session()
         with session.begin():
-            # Comput the number of samples to grab on either side of the detection
-            cdi = session.get(DailyContDataInfo, self.daily_info.contdatainfo_id)
-            samples_around_pick = int(seconds_around_pick * cdi.samp_rate)
-            total_npts = len(continuous_data)
-
             # Get ids
             data_id = self.daily_info.contdatainfo_id
             if is_p:
@@ -295,6 +290,11 @@ class DetectorDBConnection:
                 method_id = self.s_detection_method_id
                 phase = "S"
 
+            # Comput the number of samples to grab on either side of the detection
+            cdi = session.get(DailyContDataInfo, data_id)
+            samples_around_pick = int(seconds_around_pick * cdi.samp_rate)
+            total_npts = len(continuous_data)
+
             # Get all detections for the contdatainfo and method greater than the pick_thresh
             dldets = services.get_dldetections(
                 session, data_id, method_id, pick_thresh, phase=phase
@@ -302,19 +302,6 @@ class DetectorDBConnection:
 
             # Iterate over the detections
             for det in dldets:
-                # TODO: Check if the detection is on the previous day, if so need to check
-                # for existing picks and handle accordingly
-
-                # Create a pick from the detection
-                pick = services.insert_pick(
-                    session,
-                    self.station_id,
-                    self.seed_code,
-                    det.phase,
-                    det.time,
-                    auth,
-                    detid=det.id,
-                )
 
                 # Compute the relevant waveform information for all channels
                 i1 = det.sample - samples_around_pick
@@ -327,59 +314,128 @@ class DetectorDBConnection:
                 pick_cont_data = deepcopy(continuous_data[i1:i2, :])
                 wf_start = cdi.proc_start + timedelta(seconds=(i1 * cdi.dt))
                 wf_end = cdi.proc_start + timedelta(seconds=(i2 * cdi.dt))
-                # print(wf_end - det.time)
-                # print(det.time - wf_start)
-                # expected_start = det.time - timedelta(seconds=seconds_around_pick)
-                # expected_end = det.time + timedelta(
-                #     seconds=seconds_around_pick + cdi.dt
-                # )
-                # datetimeformat = "%Y-%m-%dT%H:%M:%S.%f"
-                # print(
-                #     "START",
-                #     expected_start.strftime(datetimeformat),
-                #     wf_start.strftime(datetimeformat),
-                # )
-                # print(
-                #     "END",
-                #     expected_end.strftime(datetimeformat),
-                #     wf_end.strftime(datetimeformat),
-                # )
-                # assert (
-                #     wf_start - expected_start
-                # ).microseconds == 0, "wf_start different than expected"
-                # assert (
-                #     wf_end - expected_end
-                # ).microseconds == 0, "wf_end different than expected"
 
-                # Iterate over the different channels
-                for seed_code in self.channel_info.channel_ids.keys():
-                    chan_id = self.channel_info.channel_ids[seed_code]
-
-                    # Get the appropriate channel index of the data
-                    if self.ncomps == 1:
-                        chan_ind = 0
-                    elif seed_code in ["EHZ", "BHZ", "HHZ"]:
-                        chan_ind = 2
-                    elif seed_code in ["EHE", "EH1", "BHE", "BH1", "HHE", "HH1"]:
-                        chan_ind = 0
-                    elif seed_code in ["EHN", "EH2", "BHN", "BH2", "HHN", "HH2"]:
-                        chan_ind = 1
-                    else:
-                        raise ValueError("Something is wrong with the channel code")
-
-                    # Get just the channel of interest
-                    wf_data = pick_cont_data[:, chan_ind].tolist()
-
-                    # Create the waveform object
-                    wf = Waveform(
-                        data_id=data_id,
-                        chan_id=chan_id,
-                        filt_low=wf_filt_low,
-                        filt_high=wf_filt_high,
-                        data=wf_data,
-                        start=wf_start,
-                        end=wf_end,
-                        proc_notes=wf_proc_notes,
+                # Check if the detection is on the previous day, if so need to check
+                # for existing picks and handle accordingly
+                if det.time.date() < cdi.date:
+                    # Check if there are any picks with a ptime close to det.time
+                    close_picks = services.get_picks(
+                        session,
+                        self.station_id,
+                        self.seed_code,
+                        phase,
+                        min_time=det.time - timedelta(seconds=0.1),
+                        max_time=det.time + timedelta(seconds=0.1),
                     )
-                    # Add the waveform to the pick
-                    pick.wfs.add(wf)
+
+                    if len(close_picks) == 0: 
+                        continue
+                    if len(close_picks) > 1:
+                        raise NotImplementedError("There are multiple close picks in the previous day's data...")
+                    
+                    # There's only one pick
+                    pick = close_picks[0]
+                    prev_data_id = session.get(DLDetection, pick.detid).data_id
+                    # Get the waveforms for these picks
+                    close_wfs = services.get_waveforms(session, pick.id, data_id=prev_data_id)
+
+                    # Only update the pick and waveforms if the waveforms would have more continuous data available
+                    prev_inserted_npts = len(close_wfs[0].data)
+                    if prev_inserted_npts > (i2 - i1):
+                        continue
+
+                    # If so, update the pick time and detection id, everything else should be the same
+                    pick.ptime = det.time
+                    pick.detid = det.id
+
+                    # Update the waveforms assigned to the pick 
+                    for wf in close_wfs:
+                        seed_code = session.get(Channel, wf.chan_id).seed_code
+                        # Get the appropriate channel index of the data
+                        chan_ind = self.get_channel_data_index(self.ncomps, seed_code)
+                        # Get just the channel of interest
+                        wf_data = pick_cont_data[:, chan_ind].tolist()
+
+                        wf.data = wf_data
+                        wf.start = wf_start
+                        wf.end = wf_end
+                        wf.data_id = data_id
+                        # TODO: Might want to update this in case the channel switched between days... 
+                        # But I think it makes sense to still assign it to the previous day's channel
+                        # wf.chan_id = self.channel_info.channel_ids[seed_code]
+
+                else:
+                    # Create a pick from the detection
+                    pick = services.insert_pick(
+                        session,
+                        self.station_id,
+                        self.seed_code,
+                        det.phase,
+                        det.time,
+                        auth,
+                        detid=det.id,
+                    )
+
+                    # print(wf_end - det.time)
+                    # print(det.time - wf_start)
+                    # expected_start = det.time - timedelta(seconds=seconds_around_pick)
+                    # expected_end = det.time + timedelta(
+                    #     seconds=seconds_around_pick + cdi.dt
+                    # )
+                    # datetimeformat = "%Y-%m-%dT%H:%M:%S.%f"
+                    # print(
+                    #     "START",
+                    #     expected_start.strftime(datetimeformat),
+                    #     wf_start.strftime(datetimeformat),
+                    # )
+                    # print(
+                    #     "END",
+                    #     expected_end.strftime(datetimeformat),
+                    #     wf_end.strftime(datetimeformat),
+                    # )
+                    # assert (
+                    #     wf_start - expected_start
+                    # ).microseconds == 0, "wf_start different than expected"
+                    # assert (
+                    #     wf_end - expected_end
+                    # ).microseconds == 0, "wf_end different than expected"
+
+                    # Iterate over the different channels
+                    for seed_code in self.channel_info.channel_ids.keys():
+                        chan_id = self.channel_info.channel_ids[seed_code]
+
+                        # Get the appropriate channel index of the data
+                        chan_ind = self.get_channel_data_index(self.ncomps, seed_code)
+
+                        # Get just the channel of interest
+                        wf_data = pick_cont_data[:, chan_ind].tolist()
+
+                        # Create the waveform object
+                        wf = Waveform(
+                            data_id=data_id,
+                            chan_id=chan_id,
+                            filt_low=wf_filt_low,
+                            filt_high=wf_filt_high,
+                            data=wf_data,
+                            start=wf_start,
+                            end=wf_end,
+                            proc_notes=wf_proc_notes,
+                        )
+                        # Add the waveform to the pick
+                        pick.wfs.add(wf)
+
+    @staticmethod
+    def get_channel_data_index(ncomps, seed_code):
+        # Get the appropriate channel index of the data
+        if ncomps == 1:
+            chan_ind = 0
+        elif seed_code in ["EHZ", "BHZ", "HHZ"]:
+            chan_ind = 2
+        elif seed_code in ["EHE", "EH1", "BHE", "BH1", "HHE", "HH1"]:
+            chan_ind = 0
+        elif seed_code in ["EHN", "EH2", "BHN", "BH2", "HHN", "HH2"]:
+            chan_ind = 1
+        else:
+            raise ValueError("Something is wrong with the channel code")
+        
+        return chan_ind
