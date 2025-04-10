@@ -281,6 +281,7 @@ class ApplyDetector:
                     self.dataloader.error_in_loading()
 
             if self.db_conn is not None:
+                db_start_time = time.time()
                 self.save_daily_results_in_db(
                     date,
                     db_continuous_data,
@@ -289,6 +290,9 @@ class ApplyDetector:
                     error,
                     p_post_probs,
                     s_post_probs,
+                )
+                logger.debug(
+                    f"Total time getting detections and saving info to database: {time.time() - db_start_time:0.2f} s"
                 )
             date += delta
 
@@ -313,13 +317,18 @@ class ApplyDetector:
     def save_daily_results_in_db(
         self, date, cont_data, metadata, gaps, error, p_post_probs, s_post_probs=None
     ):
+        start_data = time.time()
         # Add row to contdatainfo
         self.db_conn.save_data_info(date, metadata, error=error)
         # Add gaps
         self.db_conn.format_and_save_gaps(
             self.dataloader.simplify_gaps(gaps), self.min_gap_sep_seconds
         )
+        logger.debug(
+            f"Time to store contdatainfo and gaps: {time.time() - start_data:0.2f} s"
+        )
 
+        start_dets = time.time()
         # Save P Detections
         self.db_conn.save_detections(
             self.get_detections_from_post_probs(
@@ -329,6 +338,10 @@ class ApplyDetector:
                 db_ids=self.db_conn.get_dldet_fk_ids(),
             )
         )
+        logger.debug(
+            f"Time to process and store P - detections: {time.time() - start_dets:0.2f} s"
+        )
+        start_picks = time.time()
         self.db_conn.save_picks_from_detections(
             pick_thresh=self.p_pick_thresh,
             is_p=True,
@@ -339,9 +352,13 @@ class ApplyDetector:
             wf_proc_notes=self.wf_proc_notes,
             seconds_around_pick=self.wf_seconds_around_pick,
         )
+        logger.debug(
+            f"Time to store P - picks and waveforms: {time.time() - start_picks:0.2f} s"
+        )
 
         # Save S detections
         if self.ncomps == 3:
+            start_dets = time.time()
             self.db_conn.save_detections(
                 self.get_detections_from_post_probs(
                     s_post_probs,
@@ -350,16 +367,22 @@ class ApplyDetector:
                     db_ids=self.db_conn.get_dldet_fk_ids(is_p=False),
                 )
             )
-
+            logger.debug(
+                f"Time to process and store S - detections: {time.time() - start_dets:0.2f} s"
+            )
+            start_picks = time.time()
             self.db_conn.save_picks_from_detections(
                 pick_thresh=self.s_pick_thresh,
                 is_p=False,
                 auth=self.db_pick_author,
-                continuous_data=self.dataloader.continuous_data,
+                continuous_data=cont_data,
                 wf_filt_low=None,
                 wf_filt_high=None,
                 wf_proc_notes=self.wf_proc_notes,
                 seconds_around_pick=self.wf_seconds_around_pick,
+            )
+            logger.debug(
+                f"Time to store S - picks and waveforms: {time.time() - start_picks:0.2f} s"
             )
 
     # TODO: This name seems inappropriate (apply_to_one_day?)
