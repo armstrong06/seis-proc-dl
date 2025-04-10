@@ -284,6 +284,7 @@ class DetectorDBConnection:
             # Comput the number of samples to grab on either side of the detection
             cdi = session.get(DailyContDataInfo, self.daily_info.contdatainfo_id)
             samples_around_pick = int(seconds_around_pick * cdi.samp_rate)
+            total_npts = len(continuous_data)
 
             # Get ids
             data_id = self.daily_info.contdatainfo_id
@@ -315,6 +316,11 @@ class DetectorDBConnection:
                 # Compute the relevant waveform information for all channels
                 i1 = det.sample - samples_around_pick
                 i2 = det.sample + samples_around_pick + 1
+                if i1 < 0:
+                    i1 = 0
+                # TODO: Check if this needs a -1
+                if i2 > total_npts:
+                    i2 = total_npts
                 pick_cont_data = deepcopy(continuous_data[i1:i2, :])
                 wf_start = cdi.proc_start + timedelta(seconds=(i1 * cdi.dt))
                 wf_end = cdi.proc_start + timedelta(seconds=(i2 * cdi.dt))
