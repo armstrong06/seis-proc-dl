@@ -72,6 +72,9 @@ class DetectorDBConnection:
         if selected_stat is None:
             return None, None
 
+        assert (
+            len(selected_channels) == self.ncomps
+        ), "Number of channels selected does not agree with the number of components"
         # Store the station
         self.station_id = selected_stat.id
         # Store the current channels
