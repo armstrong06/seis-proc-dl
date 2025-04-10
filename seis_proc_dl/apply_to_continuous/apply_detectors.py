@@ -271,6 +271,7 @@ class ApplyDetector:
                         files, date_outdir, debug_N_examples=debug_N_examples
                     )
                 )
+                db_continuous_data = self.dataloader.continuous_data
                 db_contdata_metadata = self.dataloader.metadata
                 db_gaps = self.dataloader.gaps
                 if not applied_successfully:
@@ -282,6 +283,7 @@ class ApplyDetector:
             if self.db_conn is not None:
                 self.save_daily_results_in_db(
                     date,
+                    db_continuous_data,
                     db_contdata_metadata,
                     db_gaps,
                     error,
@@ -309,7 +311,7 @@ class ApplyDetector:
                 )
 
     def save_daily_results_in_db(
-        self, date, metadata, gaps, error, p_post_probs, s_post_probs
+        self, date, cont_data, metadata, gaps, error, p_post_probs, s_post_probs=None
     ):
         # Add row to contdatainfo
         self.db_conn.save_data_info(date, metadata, error=error)
@@ -331,7 +333,7 @@ class ApplyDetector:
             pick_thresh=self.p_pick_thresh,
             is_p=True,
             auth=self.db_pick_author,
-            continuous_data=self.dataloader.continuous_data,
+            continuous_data=cont_data,
             wf_filt_low=None,
             wf_filt_high=None,
             wf_proc_notes=self.wf_proc_notes,
