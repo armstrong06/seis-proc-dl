@@ -50,6 +50,123 @@ def db_session(monkeypatch):
     connection.close()
 
 
+@pytest.fixture
+def contdatainfo_ex():
+    new_date = datetime.strptime("2013-03-31", dateformat)
+    metadata_dict = {
+        "sampling_rate": 100.0,
+        "dt": 0.01,
+        "original_npts": 8280000,
+        "original_starttime": datetime.strptime(
+            "2013-03-31T01:00:00.00", datetimeformat
+        ),
+        "original_endtime": datetime.strptime("2013-03-31T23:59:59.59", datetimeformat),
+        "npts": 8640000,
+        "starttime": datetime.strptime("2013-03-31T00:00:00.00", datetimeformat),
+        "previous_appended": False,
+    }
+    return new_date, deepcopy(metadata_dict)
+
+
+@pytest.fixture
+def simple_gaps_ex():
+    gap1 = [
+        # "Net",
+        # "Stat",
+        # "",
+        "HHE",
+        datetime.strptime("2013-03-31T01:00:00.00", datetimeformat),
+        datetime.strptime("2013-03-31T02:00:00.00", datetimeformat),
+        # 777,
+        # 777,
+    ]
+
+    gap2 = [
+        # "Net",
+        # "Stat",
+        # "",
+        "HHE",
+        datetime.strptime("2013-03-31T03:00:00.00", datetimeformat),
+        datetime.strptime("2013-03-31T04:00:00.00", datetimeformat),
+        # 777,
+        # 777,
+    ]
+
+    gap3 = [
+        # "Net",
+        # "Stat",
+        # "",
+        "HHE",
+        datetime.strptime("2013-03-31T05:00:00.00", datetimeformat),
+        datetime.strptime("2013-03-31T06:00:00.00", datetimeformat),
+        # 777,
+        # 777,
+    ]
+
+    return deepcopy([gap1, gap2, gap3])
+
+
+@pytest.fixture
+def close_gaps_ex():
+    gap1 = [
+        # "Net",
+        # "Stat",
+        # "",
+        "HHZ",
+        datetime.strptime("2013-03-31T01:00:00.00", datetimeformat),
+        datetime.strptime("2013-03-31T02:00:00.00", datetimeformat),
+        # 777,
+        # 777,
+    ]
+
+    # 1 second between gap1 and gap2
+    gap2 = [
+        # "Net",
+        # "Stat",
+        # "",
+        "HHZ",
+        datetime.strptime("2013-03-31T02:00:01.00", datetimeformat),
+        datetime.strptime("2013-03-31T02:00:11.00", datetimeformat),
+        # 777,
+        # 777,
+    ]
+
+    # 1 second between gap2 and gap3
+    gap3 = [
+        # "Net",
+        # "Stat",
+        # "",
+        "HHZ",
+        datetime.strptime("2013-03-31T02:00:12.00", datetimeformat),
+        datetime.strptime("2013-03-31T02:00:22.00", datetimeformat),
+        # 777,
+        # 777,
+    ]
+
+    # 5.0 seconds between gap3 and gap4
+    gap4 = [
+        # "Net",
+        # "Stat",
+        # "",
+        "HHZ",
+        datetime.strptime("2013-03-31T02:00:27.00", datetimeformat),
+        datetime.strptime("2013-03-31T02:00:37.00", datetimeformat),
+        # 777,
+        # 777,
+    ]
+
+    return deepcopy([gap1, gap2, gap3, gap4])
+
+
+@pytest.fixture
+def detections_ex():
+    d1 = {"sample": 1000, "height": 90, "width": 20}
+    d2 = {"sample": 20000, "height": 70, "width": 30}
+    d3 = {"sample": 30000, "height": 80, "width": 25}
+
+    return deepcopy([d1, d2, d3])
+
+
 class TestDetectorDBConnection:
     @pytest.fixture
     def db_session_with_3c_stat_loaded(self, db_session):
@@ -189,25 +306,6 @@ class TestDetectorDBConnection:
         ), "invalid ondate"
 
     @pytest.fixture
-    def contdatainfo_ex(self):
-        new_date = datetime.strptime("2013-03-31", dateformat)
-        metadata_dict = {
-            "sampling_rate": 100.0,
-            "dt": 0.01,
-            "original_npts": 8280000,
-            "original_starttime": datetime.strptime(
-                "2013-03-31T01:00:00.00", datetimeformat
-            ),
-            "original_endtime": datetime.strptime(
-                "2013-03-31T23:59:59.59", datetimeformat
-            ),
-            "npts": 8640000,
-            "starttime": datetime.strptime("2013-03-31T00:00:00.00", datetimeformat),
-            "previous_appended": False,
-        }
-        return new_date, deepcopy(metadata_dict)
-
-    @pytest.fixture
     def db_session_with_saved_contdatainfo(
         self, db_session_with_detection_methods, contdatainfo_ex
     ):
@@ -275,94 +373,6 @@ class TestDetectorDBConnection:
         # This should throw any error because the duplicate rows are the different
         with pytest.raises(ValueError):
             db_conn.save_data_info(new_date, metadata_dict)
-
-    @pytest.fixture
-    def simple_gaps_ex(self):
-        gap1 = [
-            # "Net",
-            # "Stat",
-            # "",
-            "HHE",
-            datetime.strptime("2013-03-31T01:00:00.00", datetimeformat),
-            datetime.strptime("2013-03-31T02:00:00.00", datetimeformat),
-            # 777,
-            # 777,
-        ]
-
-        gap2 = [
-            # "Net",
-            # "Stat",
-            # "",
-            "HHE",
-            datetime.strptime("2013-03-31T03:00:00.00", datetimeformat),
-            datetime.strptime("2013-03-31T04:00:00.00", datetimeformat),
-            # 777,
-            # 777,
-        ]
-
-        gap3 = [
-            # "Net",
-            # "Stat",
-            # "",
-            "HHE",
-            datetime.strptime("2013-03-31T05:00:00.00", datetimeformat),
-            datetime.strptime("2013-03-31T06:00:00.00", datetimeformat),
-            # 777,
-            # 777,
-        ]
-
-        return deepcopy([gap1, gap2, gap3])
-
-    @pytest.fixture
-    def close_gaps_ex(self):
-        gap1 = [
-            # "Net",
-            # "Stat",
-            # "",
-            "HHZ",
-            datetime.strptime("2013-03-31T01:00:00.00", datetimeformat),
-            datetime.strptime("2013-03-31T02:00:00.00", datetimeformat),
-            # 777,
-            # 777,
-        ]
-
-        # 1 second between gap1 and gap2
-        gap2 = [
-            # "Net",
-            # "Stat",
-            # "",
-            "HHZ",
-            datetime.strptime("2013-03-31T02:00:01.00", datetimeformat),
-            datetime.strptime("2013-03-31T02:00:11.00", datetimeformat),
-            # 777,
-            # 777,
-        ]
-
-        # 1 second between gap2 and gap3
-        gap3 = [
-            # "Net",
-            # "Stat",
-            # "",
-            "HHZ",
-            datetime.strptime("2013-03-31T02:00:12.00", datetimeformat),
-            datetime.strptime("2013-03-31T02:00:22.00", datetimeformat),
-            # 777,
-            # 777,
-        ]
-
-        # 5.0 seconds between gap3 and gap4
-        gap4 = [
-            # "Net",
-            # "Stat",
-            # "",
-            "HHZ",
-            datetime.strptime("2013-03-31T02:00:27.00", datetimeformat),
-            datetime.strptime("2013-03-31T02:00:37.00", datetimeformat),
-            # 777,
-            # 777,
-        ]
-
-        return deepcopy([gap1, gap2, gap3, gap4])
 
     @pytest.fixture
     def multi_channel_gaps_ex(self, close_gaps_ex, simple_gaps_ex):
@@ -467,14 +477,6 @@ class TestDetectorDBConnection:
         s_det_meth = session.get(tables.DetectionMethod, d["method"])
         assert s_det_meth is not None, "S detection_method is not set"
         assert s_det_meth.phase == "S", "S detection_method phase is invalid"
-
-    @pytest.fixture
-    def detections_ex(self):
-        d1 = {"sample": 1000, "height": 90, "width": 20}
-        d2 = {"sample": 20000, "height": 70, "width": 30}
-        d3 = {"sample": 30000, "height": 80, "width": 25}
-
-        return deepcopy([d1, d2, d3])
 
     @pytest.fixture
     def db_session_with_P_dldets(
