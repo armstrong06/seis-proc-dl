@@ -246,6 +246,9 @@ class ApplyDetector:
             date_outdir = os.path.join(self.outdir, date_str)
 
             error = None
+            p_post_probs = None
+            s_post_probs = None
+            db_continuous_data = None
             db_contdata_metadata = None
             db_gaps = None
             ### If there are no files for that station/day, move to the next day ###
@@ -329,36 +332,37 @@ class ApplyDetector:
                 f"Time to store contdatainfo and gaps: {time.time() - start_data:0.2f} s"
             )
 
-        start_dets = time.time()
-        # Save P Detections
-        self.db_conn.save_detections(
-            self.get_detections_from_post_probs(
-                p_post_probs,
-                "P",
-                thresh=self.p_det_thresh,
-                db_ids=self.db_conn.get_dldet_fk_ids(),
+        if p_post_probs is not None:
+            start_dets = time.time()
+            # Save P Detections
+            self.db_conn.save_detections(
+                self.get_detections_from_post_probs(
+                    p_post_probs,
+                    "P",
+                    thresh=self.p_det_thresh,
+                    db_ids=self.db_conn.get_dldet_fk_ids(),
+                )
             )
-        )
-        logger.debug(
-            f"Time to process and store P - detections: {time.time() - start_dets:0.2f} s"
-        )
-        start_picks = time.time()
-        self.db_conn.save_picks_from_detections(
-            pick_thresh=self.p_pick_thresh,
-            is_p=True,
-            auth=self.db_pick_author,
-            continuous_data=cont_data,
-            wf_filt_low=None,
-            wf_filt_high=None,
-            wf_proc_notes=self.wf_proc_notes,
-            seconds_around_pick=self.wf_seconds_around_pick,
-        )
-        logger.debug(
-            f"Time to store P - picks and waveforms: {time.time() - start_picks:0.2f} s"
-        )
+            logger.debug(
+                f"Time to process and store P - detections: {time.time() - start_dets:0.2f} s"
+            )
+            start_picks = time.time()
+            self.db_conn.save_picks_from_detections(
+                pick_thresh=self.p_pick_thresh,
+                is_p=True,
+                auth=self.db_pick_author,
+                continuous_data=cont_data,
+                wf_filt_low=None,
+                wf_filt_high=None,
+                wf_proc_notes=self.wf_proc_notes,
+                seconds_around_pick=self.wf_seconds_around_pick,
+            )
+            logger.debug(
+                f"Time to store P - picks and waveforms: {time.time() - start_picks:0.2f} s"
+            )
 
         # Save S detections
-        if self.ncomps == 3:
+        if self.ncomps == 3 and s_post_probs is not None:
             start_dets = time.time()
             self.db_conn.save_detections(
                 self.get_detections_from_post_probs(
