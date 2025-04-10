@@ -278,7 +278,6 @@ class ApplyDetector:
                     # Reset dataloader
                     self.dataloader.error_in_loading()
 
-            # TODO: save the continuous data here
             if self.db_conn is not None:
                 self.save_daily_results_in_db(
                     date,
@@ -314,7 +313,7 @@ class ApplyDetector:
         # Add row to contdatainfo
         self.db_conn.save_data_info(date, metadata, error=error)
         # Add gaps
-        self.db_conn.format_and_save_gaps(gaps)
+        self.db_conn.format_and_save_gaps(self.dataloader.simplify_gaps(gaps))
 
         # Save P Detections
         self.db_conn.save_detections(
@@ -328,7 +327,7 @@ class ApplyDetector:
         self.db_conn.save_picks_from_detections(
             pick_thresh=self.p_pick_thresh,
             is_p=True,
-            auth=self.auth,
+            auth=self.db_pick_author,
             continuous_data=self.dataloader.continuous_data,
             wf_filt_low=None,
             wf_filt_high=None,
@@ -350,7 +349,7 @@ class ApplyDetector:
             self.db_conn.save_picks_from_detections(
                 pick_thresh=self.s_pick_thresh,
                 is_p=False,
-                auth=self.auth,
+                auth=self.db_pick_author,
                 continuous_data=self.dataloader.continuous_data,
                 wf_filt_low=None,
                 wf_filt_high=None,
@@ -1609,6 +1608,10 @@ class DataLoader:
         ), "The end of the trace goes into the next day"
 
         return True, st, gaps
+
+    @staticmethod
+    def simplify_gaps(gaps):
+        return [[gap[3], gap[4].datetime, gap[5].datetime] for gap in gaps]
 
     def write_data_info(self, outpath):
         """Write the trace metadata and gap information to a json file. For each gap,

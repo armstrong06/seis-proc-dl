@@ -1931,6 +1931,21 @@ class TestDataLoader:
             dl.continuous_data[-(window_length - end_pad_npts) :],
         )
 
+    def test_simplify_gaps(self):
+        dl = apply_detectors.DataLoader()
+        file1 = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
+        loaded = dl.load_1c_data(file1)
+        simplified_gaps = dl.simplify_gaps(dl.gaps)
+        for i, gap in enumerate(simplified_gaps):
+            assert gap[0] == "HHZ", f"gap {i} channel is incorrect"
+            assert (
+                type(gap[1]) == datetime.datetime
+            ), f"gap {i} end is not a datetime object"
+            assert (
+                type(gap[2]) == datetime.datetime
+            ), f"gap {i} end is not a datetime object"
+            assert gap[2] > gap[1], f"gap {i} end <= start"
+
     def test_write_data_info_1c(self):
         dl = apply_detectors.DataLoader()
         file1 = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
