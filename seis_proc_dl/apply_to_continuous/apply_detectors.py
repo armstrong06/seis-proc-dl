@@ -100,8 +100,10 @@ class ApplyDetector:
             self.p_det_thresh = config.database.p_det_thresh
             self.p_pick_thresh = config.database.p_pick_thresh
             self.wf_seconds_around_pick = config.database.wf_seconds_around_pick
-            self.db_pick_author = config.database.pick_auth
+            self.db_pick_author = config.database.pick_author
             self.wf_proc_notes = "From Dataloader.continuous_data"
+            self.s_det_thresh = None
+            self.s_pick_thresh = None
             if ncomps == 1:
                 self.db_conn.add_detection_method(
                     config.database.det_method_1c_P.name,
