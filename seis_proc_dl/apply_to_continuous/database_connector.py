@@ -74,7 +74,7 @@ class DetectorDBConnection:
 
         assert (
             len(selected_channels) == self.ncomps
-        ), "Number of channels selected does not agree with the number of components"
+        ), f"Number of channels selected ({len(selected_channels)}) does not agree with the number of components ({self.ncomps})"
         # Store the station
         self.station_id = selected_stat.id
         # Store the current channels
