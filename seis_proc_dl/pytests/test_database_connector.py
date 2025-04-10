@@ -666,6 +666,7 @@ class TestApplyDetectorDB:
         assert applier.s_pick_thresh == 75
         assert applier.wf_seconds_around_pick == 10.0
         assert applier.db_pick_author == "SPDL"
+        assert applier.min_gap_sep_seconds == 5
 
     def test_init_1c(self, db_session):
         session, _ = db_session
@@ -686,3 +687,4 @@ class TestApplyDetectorDB:
         assert applier.s_pick_thresh is None
         assert applier.wf_seconds_around_pick == 10.0
         assert applier.db_pick_author == "SPDL"
+        assert applier.min_gap_sep_seconds == 5
