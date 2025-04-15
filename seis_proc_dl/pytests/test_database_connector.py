@@ -344,6 +344,34 @@ class TestDetectorDBConnection:
         assert contdatainfo.proc_start == None, "proc_start is not None"
         assert contdatainfo.error == error, "error incorrect"
 
+    def test_save_data_info_insufficient_data(
+        self, db_session_with_3c_stat_loaded, contdatainfo_ex
+    ):
+        session, db_conn, start, end = db_session_with_3c_stat_loaded
+        new_date, metadata_dict = contdatainfo_ex
+        error = "insufficient_data"
+        db_conn.save_data_info(new_date, metadata_dict, error=error)
+
+        assert (
+            db_conn.daily_info.date == new_date
+        ), "invalid date in DailyDetectionDBInfo"
+        assert db_conn.daily_info.contdatainfo_id is not None, "contdatainfo id not set"
+        contdatainfo = session.get(
+            tables.DailyContDataInfo, db_conn.daily_info.contdatainfo_id
+        )
+        assert inspect(contdatainfo).persistent, "contdatainfo not persistent"
+        assert contdatainfo is not None, "contdatainfo not set"
+        assert contdatainfo.chan_pref == "HH", "invalid chan_pref"
+        assert contdatainfo.date == new_date.date(), "contdatainfo date incorrect"
+        assert contdatainfo.org_start == datetime.strptime(
+            "2013-03-31T01:00:00.00", datetimeformat
+        ), "invalid orig_start"
+        assert contdatainfo.proc_start is None, "invalid proc_start"
+        assert contdatainfo.proc_npts is None, "invalid proc_npts"
+        assert contdatainfo.proc_end is None, "invalid proc_end"
+        assert contdatainfo.prev_appended is False, "invalud prev_appended"
+        assert contdatainfo.error == error, "invalid error"
+
     def test_save_data_info_duplicate_identical_entry(
         self, db_session_with_saved_contdatainfo, contdatainfo_ex
     ):

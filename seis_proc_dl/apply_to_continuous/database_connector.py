@@ -155,8 +155,8 @@ class DetectorDBConnection:
                     "org_npts": metadata_dict["original_npts"],
                     "org_start": metadata_dict["original_starttime"],
                     "org_end": metadata_dict["original_endtime"],
-                    "proc_npts": metadata_dict["npts"],
-                    "proc_start": metadata_dict["starttime"],
+                    "proc_npts": metadata_dict["npts"] if error is None else None,
+                    "proc_start": metadata_dict["starttime"] if error is None else None,
                     "proc_end": None,  # just get this from proc_start, samp_rate, and proc_npts
                     "prev_appended": metadata_dict["previous_appended"],
                 }
@@ -185,6 +185,7 @@ class DetectorDBConnection:
                     or contdatainfo.proc_start != db_dict["proc_start"]
                     or contdatainfo.proc_npts != db_dict["proc_npts"]
                     or contdatainfo.prev_appended != db_dict["prev_appended"]
+                    or contdatainfo.error != db_dict["error"]
                 ):
                     info_str = f"{db_dict['sta_id']}, {db_dict['chan_pref']}, {db_dict['date']}"
                     raise ValueError(
