@@ -435,6 +435,20 @@ class TestDetectorDBConnection:
 
         assert len(formatted) == 3, "incorrect number of gaps"
 
+    def test_format_channel_gaps_empty(self, db_session_with_saved_contdatainfo):
+        session, db_conn = db_session_with_saved_contdatainfo
+
+        formatted = db_conn.format_channel_gaps([], 1, 5)
+
+        assert len(formatted) == 0, "incorrect number of gaps"
+
+    def test_format_channel_gaps_none(self, db_session_with_saved_contdatainfo):
+        session, db_conn = db_session_with_saved_contdatainfo
+
+        formatted = db_conn.format_channel_gaps(None, 1, 5)
+
+        assert len(formatted) == 0, "incorrect number of gaps"
+
     def test_format_channel_gaps_merged(
         self, db_session_with_saved_contdatainfo, close_gaps_ex
     ):
@@ -485,6 +499,48 @@ class TestDetectorDBConnection:
         # ContDataInfo is detached
         # print("persistent", inspect(db_conn.daily_info.contdatainfo).persistent)
         # print("detached", inspect(db_conn.daily_info.contdatainfo).detached)
+
+    def test_format_and_save_gaps_empty(
+        self, db_session_with_saved_contdatainfo, multi_channel_gaps_ex
+    ):
+        session, db_conn = db_session_with_saved_contdatainfo
+        gaps = []
+
+        db_conn.format_and_save_gaps(gaps, 5)
+        gaps_E = services.get_gaps(
+            session,
+            db_conn.channel_info.channel_ids["HHE"],
+            db_conn.daily_info.contdatainfo_id,
+        )
+        assert len(gaps_E) == 0, "Incorrect number of gaps on HHE channel"
+
+        gaps_Z = services.get_gaps(
+            session,
+            db_conn.channel_info.channel_ids["HHZ"],
+            db_conn.daily_info.contdatainfo_id,
+        )
+        assert len(gaps_Z) == 0, "Incorrect number of gaps on HHZ channel"
+
+    def test_format_and_save_gaps_none(
+        self, db_session_with_saved_contdatainfo, multi_channel_gaps_ex
+    ):
+        session, db_conn = db_session_with_saved_contdatainfo
+        gaps = None
+
+        db_conn.format_and_save_gaps(gaps, 5)
+        gaps_E = services.get_gaps(
+            session,
+            db_conn.channel_info.channel_ids["HHE"],
+            db_conn.daily_info.contdatainfo_id,
+        )
+        assert len(gaps_E) == 0, "Incorrect number of gaps on HHE channel"
+
+        gaps_Z = services.get_gaps(
+            session,
+            db_conn.channel_info.channel_ids["HHZ"],
+            db_conn.daily_info.contdatainfo_id,
+        )
+        assert len(gaps_Z) == 0, "Incorrect number of gaps on HHZ channel"
 
     def test_get_dldet_fk_ids_P(self, db_session_with_saved_contdatainfo):
         session, db_conn = db_session_with_saved_contdatainfo
@@ -992,3 +1048,80 @@ class TestApplyDetectorDB:
         applier.apply_to_multiple_days(
             "YWB", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
         )
+
+    def test_save_daily_results_in_db_1C_gaps_empty(self, db_session, contdatainfo_ex):
+        session, _ = db_session
+        applier = ApplyDetector(
+            1, apply_detector_config, session_factory=lambda: session
+        )
+
+        date, metadata = contdatainfo_ex
+        gaps = []
+        error = None
+
+        continuous_data = np.zeros((metadata["npts"], 1))
+        p_post_probs = np.zeros(metadata["npts"])
+        p_post_probs[10000] = 90
+        p_post_probs[25000] = 80
+        p_post_probs[40000] = 75
+        p_post_probs[56000] = 50
+        p_post_probs[75000] = 45
+
+        applier.db_conn.get_channel_dates(date, "YNR", "HHZ")
+
+        applier.save_daily_results_in_db(
+            date, continuous_data, metadata, gaps, error, p_post_probs
+        )
+
+        # check the gaps
+        gaps_Z = services.get_gaps(
+            session,
+            applier.db_conn.channel_info.channel_ids["HHZ"],
+            applier.db_conn.daily_info.contdatainfo_id,
+        )
+        assert len(gaps_Z) == 0, "Incorrect number of gaps on HHZ channel"
+
+    def test_save_daily_results_in_db_1C_error(self, db_session, contdatainfo_ex):
+        session, _ = db_session
+        applier = ApplyDetector(
+            1, apply_detector_config, session_factory=lambda: session
+        )
+
+        date, _ = contdatainfo_ex
+        gaps = None
+        error = "no_data"
+
+        continuous_data = None
+        p_post_probs = None
+
+        applier.db_conn.get_channel_dates(date, "YNR", "HHZ")
+
+        applier.save_daily_results_in_db(
+            date, continuous_data, None, gaps, error, p_post_probs
+        )
+
+        # check the gaps
+        gaps_Z = services.get_gaps(
+            session,
+            applier.db_conn.channel_info.channel_ids["HHZ"],
+            applier.db_conn.daily_info.contdatainfo_id,
+        )
+        assert len(gaps_Z) == 0, "Incorrect number of gaps on HHZ channel"
+
+        # check the metadata
+        assert (
+            applier.db_conn.daily_info.date == date
+        ), "invalid date in DailyDetectionDBInfo"
+        assert (
+            applier.db_conn.daily_info.contdatainfo_id is not None
+        ), "contdatainfo id not set"
+        contdatainfo = session.get(
+            tables.DailyContDataInfo, applier.db_conn.daily_info.contdatainfo_id
+        )
+        assert inspect(contdatainfo).persistent, "contdatainfo not persistent"
+        assert contdatainfo is not None, "contdatainfo not set"
+        assert contdatainfo.chan_pref == "HHZ", "invalid chan_pref"
+        assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
+        assert contdatainfo.org_start is None, "invalid org_start"
+        assert contdatainfo.proc_start is None, "invalid proc_start"
+        assert contdatainfo.error == "no_data", "invalid error"

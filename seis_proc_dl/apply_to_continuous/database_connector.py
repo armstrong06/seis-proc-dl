@@ -199,7 +199,7 @@ class DetectorDBConnection:
         into one 'effective' gap. gaps should be a list of lists containing the gap seed_code, startime and endtime
         """
 
-        if len(gaps) == 0:
+        if gaps is None or len(gaps) == 0:
             return
 
         assert len(gaps[0]) == 3, "Expected just three values in the gap"
@@ -223,6 +223,9 @@ class DetectorDBConnection:
             services.insert_gaps(session, formatted_gaps)
 
     def format_channel_gaps(self, gaps, chan_id, min_gap_sep_seconds):
+        if gaps is None:
+            return []
+
         gaps.sort(key=lambda x: x[1])
         data_id = self.daily_info.contdatainfo_id
         merged = []

@@ -1667,6 +1667,8 @@ class DataLoader:
 
     @staticmethod
     def simplify_gaps(gaps):
+        if gaps is None:
+            return []
         return [[gap[3], gap[4].datetime, gap[5].datetime] for gap in gaps]
 
     def write_data_info(self, outpath):
