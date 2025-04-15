@@ -1480,7 +1480,8 @@ class DataLoader:
                 - self.store_N_seconds
             )
             for gap in self.gaps:
-                if gap[4] > start_of_prev:
+                # Check if the end of the gap is after the start of previous_continuous_data
+                if gap[5] > start_of_prev:
                     self.previous_cont_data_gaps.append(gap)
 
         elif self.store_N_seconds > 0 and self.continuous_data is None:

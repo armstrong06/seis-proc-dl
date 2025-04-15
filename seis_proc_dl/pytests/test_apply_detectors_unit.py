@@ -148,6 +148,7 @@ class TestApplyDetector:
         assert applier.dataloader.continuous_data is None
         assert applier.dataloader.previous_continuous_data is None
         assert applier.dataloader.previous_endtime is None
+        assert applier.dataloader.previous_cont_data_gaps is None
 
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         assert not os.path.exists(expected_p_probs_file)
@@ -261,6 +262,7 @@ class TestApplyDetector:
         assert applier.dataloader.continuous_data is None
         assert applier.dataloader.previous_continuous_data is None
         assert applier.dataloader.previous_endtime is None
+        assert applier.dataloader.previous_cont_data_gaps is None
         assert applier.dataloader.gaps is None
         expected_outdir_day1 = f"{apply_detectors_outdir}/2002/01/03"
         expected_outdir_day2 = f"{apply_detectors_outdir}/2002/01/04"
@@ -302,6 +304,7 @@ class TestApplyDetector:
         assert applier.dataloader.continuous_data is None
         assert applier.dataloader.previous_continuous_data is None
         assert applier.dataloader.previous_endtime is None
+        assert applier.dataloader.previous_cont_data_gaps is None
         assert applier.dataloader.gaps is None
 
         expected_outdir_day1 = f"{apply_detectors_outdir}/2002/01/02"
@@ -351,6 +354,7 @@ class TestApplyDetector:
         assert applier.dataloader.continuous_data is not None
         assert applier.dataloader.previous_continuous_data is None
         assert applier.dataloader.previous_endtime is None
+        assert applier.dataloader.previous_cont_data_gaps is None
         assert len(applier.dataloader.gaps) == 0
 
         expected_outdir_day1 = f"{apply_detectors_outdir}/2002/01/01"
@@ -1241,6 +1245,7 @@ class TestDataLoader:
         # These are not removed until the next day is loaded or explicitly removed
         assert dl.previous_continuous_data is not None
         assert dl.previous_endtime is not None
+        assert dl.previous_cont_data_gaps is not None
 
     def test_load_1c_data_reset_loader(self):
         fileZ = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
@@ -1263,22 +1268,33 @@ class TestDataLoader:
         dl = apply_detectors.DataLoader(store_N_seconds=10)
         loaded = dl.load_1c_data(file1, min_signal_percent=0)
         previous_endtime = dl.metadata["original_endtime"]
+        all_previous_gaps = dl.gaps
 
         # Previous_data should be none until the next day is read in
         assert loaded
         assert dl.previous_continuous_data is None
         assert dl.previous_endtime is None
+        assert dl.previous_cont_data_gaps is None
 
         file2 = f"{examples_dir}/WY.YMR..HHZ__2002-01-02T00:00:00.000000Z__2002-01-03T00:00:00.000000Z.mseed"
         loaded = dl.load_1c_data(file2, min_signal_percent=0)
         file2_endtime = dl.metadata["original_endtime"]
         file2_enddata = dl.continuous_data[-1000:, :]
+        file2_all_previous_gaps = dl.gaps
 
         # Check previous data is loaded
+
         saved_previous = dl.previous_continuous_data
         assert loaded
         assert dl.previous_continuous_data.shape == (1000, 1)
         assert dl.previous_endtime == previous_endtime
+        previous_gaps = list(
+            filter(lambda x: x[5] > dl.metadata["starttime"], all_previous_gaps)
+        )
+        assert np.array_equal(
+            dl.previous_cont_data_gaps,
+            previous_gaps,
+        )
 
         # load file2 without prepending previous so I can make sure the signals are the same
         dl2 = apply_detectors.DataLoader(store_N_seconds=0)
@@ -1309,6 +1325,13 @@ class TestDataLoader:
         assert loaded
         assert dl.previous_endtime == file2_endtime
         assert np.array_equal(dl.previous_continuous_data, file2_enddata)
+        file2_previous_gaps = list(
+            filter(lambda x: x[5] > dl.metadata["starttime"], file2_all_previous_gaps)
+        )
+        assert np.array_equal(
+            dl.previous_cont_data_gaps,
+            file2_previous_gaps,
+        )
 
     def test_load_data_3c_prepend_previous(self):
         fileE = f"{examples_dir}/WY.YMR..HHE__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
@@ -1320,10 +1343,12 @@ class TestDataLoader:
         assert loaded
         previous_endtime = dl.metadata["original_endtime"]
         previous_enddata = dl.continuous_data[-1000:, :]
+        all_previous_gaps = dl.gaps
 
         # Previous_data should be none until the next day is read in
         assert dl.previous_continuous_data is None
         assert dl.previous_endtime is None
+        assert dl.previous_cont_data_gaps is None
 
         fileE = f"{examples_dir}/WY.YMR..HHE__2002-01-02T00:00:00.000000Z__2002-01-03T00:00:00.000000Z.mseed"
         fileN = f"{examples_dir}/WY.YMR..HHN__2002-01-02T00:00:00.000000Z__2002-01-03T00:00:00.000000Z.mseed"
@@ -1335,7 +1360,13 @@ class TestDataLoader:
         assert dl.previous_continuous_data.shape == (1000, 3)
         assert dl.previous_endtime == previous_endtime
         assert np.array_equal(dl.previous_continuous_data, previous_enddata)
-
+        previous_gaps = list(
+            filter(lambda x: x[5] > dl.metadata["starttime"], all_previous_gaps)
+        )
+        assert np.array_equal(
+            dl.previous_cont_data_gaps,
+            previous_gaps,
+        )
         # Check that the continuous data has been correctly updated
         assert dl.continuous_data.shape == (8641000, 3)
         assert dl.metadata["starttime"] == dl.metadata["original_starttime"] - 10
@@ -1356,21 +1387,32 @@ class TestDataLoader:
         dl = apply_detectors.DataLoader(store_N_seconds=10)
         loaded = dl.load_1c_data(file1, min_signal_percent=0)
         previous_endtime = dl.metadata["original_endtime"]
+        all_previous_gaps = dl.gaps
 
         # Previous_data should be none until the next day is read in
         assert loaded
         assert dl.previous_continuous_data is None
         assert dl.previous_endtime is None
+        assert dl.previous_cont_data_gaps is None
 
         file2 = f"{examples_dir}/WY.YWB..EHZ__2002-01-02T00:00:00.000000Z__2002-01-03T00:00:00.000000Z.mseed"
         loaded = dl.load_1c_data(file2, min_signal_percent=0)
         file2_enddtime = dl.metadata["original_endtime"]
         file2_enddata = dl.continuous_data[-1000:, :]
+        file2_all_previous_gaps = dl.gaps
 
         # Check previous data is loaded
         assert loaded
         assert dl.previous_continuous_data.shape == (1000, 1)
         assert dl.previous_endtime == previous_endtime
+        previous_gaps = list(
+            filter(lambda x: x[5] > dl.metadata["starttime"], all_previous_gaps)
+        )
+        assert np.array_equal(
+            dl.previous_cont_data_gaps,
+            previous_gaps,
+        )
+        assert np.array_equal(dl.previous_cont_data_gaps[0], dl.gaps[0])
 
         # Check that the continuous data has been correctly updated
         assert dl.continuous_data.shape == (8641000, 1)
@@ -1382,6 +1424,14 @@ class TestDataLoader:
         assert loaded
         assert dl.previous_endtime == file2_enddtime
         assert np.array_equal(dl.previous_continuous_data, file2_enddata)
+        file2_previous_gaps = list(
+            filter(lambda x: x[5] > dl.metadata["starttime"], file2_all_previous_gaps)
+        )
+        assert np.array_equal(
+            dl.previous_cont_data_gaps,
+            file2_previous_gaps,
+        )
+        assert np.array_equal(dl.previous_cont_data_gaps[0], dl.gaps[0])
 
     def test_load_3c_data_reset_previous_day(self):
         fileE = f"{examples_dir}/WY.YMR..HHE__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
@@ -1394,6 +1444,7 @@ class TestDataLoader:
         assert dl.continuous_data is not None
         assert dl.previous_continuous_data is None
         assert dl.previous_endtime is None
+        assert dl.previous_cont_data_gaps is None
 
         # Try to load data but skip the day because not enough signal
         loaded = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=99.5)
@@ -1403,6 +1454,7 @@ class TestDataLoader:
         assert dl.continuous_data is None
         assert dl.previous_continuous_data is not None
         assert dl.previous_endtime is not None
+        assert dl.previous_cont_data_gaps is not None
 
         # Load data succesfully again - previous day info should be gone
         dl = apply_detectors.DataLoader(store_N_seconds=10)
@@ -1411,6 +1463,7 @@ class TestDataLoader:
         assert dl.continuous_data is not None
         assert dl.previous_continuous_data is None
         assert dl.previous_endtime is None
+        assert dl.previous_cont_data_gaps is None
 
     def test_load_1c_data_reset_previous_day(self):
         fileZ = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
@@ -1421,6 +1474,7 @@ class TestDataLoader:
         assert dl.continuous_data is not None
         assert dl.previous_continuous_data is None
         assert dl.previous_endtime is None
+        assert dl.previous_cont_data_gaps is None
 
         # Try to load data but skip the day because not enough signal
         loaded = dl.load_1c_data(fileZ, min_signal_percent=99.5)
@@ -1430,6 +1484,7 @@ class TestDataLoader:
         assert dl.continuous_data is None
         assert dl.previous_continuous_data is not None
         assert dl.previous_endtime is not None
+        assert dl.previous_cont_data_gaps is not None
 
         # Load data succesfully - previous day info should be gone
         dl = apply_detectors.DataLoader(store_N_seconds=10)
@@ -1438,6 +1493,7 @@ class TestDataLoader:
         assert dl.continuous_data is not None
         assert dl.previous_continuous_data is None
         assert dl.previous_endtime is None
+        assert dl.previous_cont_data_gaps is None
 
     def test_error_in_loading(self):
         fileZ = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
@@ -1457,6 +1513,7 @@ class TestDataLoader:
         assert dl.gaps is None
         assert dl.previous_continuous_data is None
         assert dl.previous_endtime is None
+        assert dl.previous_cont_data_gaps is None
 
         # load the error outfile
         with open(outfile, "r") as fp:
