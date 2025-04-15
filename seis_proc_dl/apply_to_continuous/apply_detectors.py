@@ -323,7 +323,7 @@ class ApplyDetector:
         start_data = time.time()
         # Add row to contdatainfo
         self.db_conn.save_data_info(date, metadata, error=error)
-        # Add gaps - gaps can be None if load_channel_data was never called or an empty list if 
+        # Add gaps - gaps can be None if load_channel_data was never called or an empty list if
         # it was called but no gaps exist
         if gaps is not None and len(gaps) > 0:
             self.db_conn.format_and_save_gaps(
@@ -1154,7 +1154,7 @@ class PhaseDetector:
 
 
 class DataLoader:
-    def __init__(self, store_N_seconds=0) -> None:
+    def __init__(self, store_N_seconds=0, min_gap_seconds=0.15) -> None:
         """Load day long miniseed files. Format and process for the PhaseDetector. Intended to be used for one
         station/channel over multiple days.
 
@@ -1169,6 +1169,7 @@ class DataLoader:
         self.previous_continuous_data = None
         self.previous_endtime = None
         self.store_N_seconds = store_N_seconds
+        self.min_gap_seconds = min_gap_seconds
 
     def error_in_loading(self, outfile=None):
         # Save outfile info (only works if the data was able to be loaded in)
@@ -1574,18 +1575,19 @@ class DataLoader:
             # return False, st, [self.format_edge_gaps(st, desired_start, desired_end, entire_file=True)]
 
         # Save gaps so I know to ignore any detections in that region later
-        # Don't save gaps if they are smaller than 5 samples for 100 Hz, 2 samples for 40 Hz
-        # TODO: May want to increase this to ~0.15 s, there seems to be quite a few gaps with durations ~0.11 s
-        gaps = st.get_gaps(min_gap=0.05)
+        # Don't save gaps if they are smaller than 15 samples for 100 Hz, 6 samples for 40 Hz
+        gaps = st.get_gaps(min_gap=self.min_gap_seconds)
 
         # Get start/end gaps for days without sufficient data and return
         if not sufficient_data:
             start_gap, end_gap = self.format_edge_gaps(
                 st, desired_start, desired_end, interpolated=False
             )
-            if (start_gap != None) and (start_gap[5] - start_gap[4] >= 0.05):
+            if (start_gap != None) and (
+                start_gap[5] - start_gap[4] >= self.min_gap_seconds
+            ):
                 gaps.insert(0, start_gap)
-            if (end_gap != None) and (end_gap[5] - end_gap[4] >= 0.05):
+            if (end_gap != None) and (end_gap[5] - end_gap[4] >= self.min_gap_seconds):
                 gaps += [end_gap]
             return False, st, gaps
 
