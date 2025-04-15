@@ -167,6 +167,12 @@ class DetectorDBConnection:
 
             if contdatainfo is None:
                 contdatainfo = services.insert_contdatainfo(session, db_dict)
+            elif metadata_dict is None:
+                if contdatainfo.error != db_dict["error"]:
+                    info_str = f"{db_dict['sta_id']}, {db_dict['chan_pref']}, {db_dict['date']}"
+                    raise ValueError(
+                        f"DailyContDataInfo {info_str} row already exists but the error when loading has changed"
+                    )
             else:
                 # I think I did this because I'm fine with the entry existing already,
                 # as long as all the values are the same. just calling insert and catching

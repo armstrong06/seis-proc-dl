@@ -366,6 +366,16 @@ class TestDetectorDBConnection:
         with pytest.raises(ValueError):
             db_conn.save_data_info(new_date, metadata_dict)
 
+    def test_save_data_info_duplicate_nonidentical_entry_error(
+        self, db_session_with_saved_contdatainfo, contdatainfo_ex
+    ):
+        session, db_conn = db_session_with_saved_contdatainfo
+        new_date, _ = contdatainfo_ex
+
+        # This should throw any error because the duplicate rows are the different
+        with pytest.raises(ValueError):
+            db_conn.save_data_info(new_date, None, error="no_data")
+
     @pytest.fixture
     def multi_channel_gaps_ex(self, close_gaps_ex, simple_gaps_ex):
         gaps = close_gaps_ex
