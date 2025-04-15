@@ -1168,6 +1168,7 @@ class DataLoader:
 
         self.previous_continuous_data = None
         self.previous_endtime = None
+        self.previous_cont_data_gaps = None
         self.store_N_seconds = store_N_seconds
         self.min_gap_seconds = min_gap_seconds
 
@@ -1457,6 +1458,8 @@ class DataLoader:
                 )
                 self.metadata["npts"] = self.continuous_data.shape[0]
                 self.metadata["previous_appended"] = True
+                # Store the previous days gaps as well
+                self.gaps = self.previous_cont_data_gaps + self.gaps
             else:
                 # TODO: Do something here, like "interpolate" if the traces are close enough
                 logger.warning(
@@ -1470,6 +1473,16 @@ class DataLoader:
             store_N_samples = int(self.store_N_seconds * self.metadata["sampling_rate"])
             self.previous_continuous_data = self.continuous_data[-store_N_samples:, :]
             self.previous_endtime = self.metadata["original_endtime"]
+            self.previous_cont_data_gaps = []
+            start_of_prev = (
+                self.metadata["starttime"]
+                + self.metadata["npts"] * self.metadata["dt"]
+                - self.store_N_seconds
+            )
+            for gap in self.gaps:
+                if gap[4] > start_of_prev:
+                    self.previous_cont_data_gaps.append(gap)
+
         elif self.store_N_seconds > 0 and self.continuous_data is None:
             # If no continous data was loaded in, reset the previous day information
             self.reset_previous_day()
@@ -1481,6 +1494,7 @@ class DataLoader:
         """Clear the data stored for the previous day."""
         self.previous_continuous_data = None
         self.previous_endtime = None
+        self.previous_cont_data_gaps = None
 
     def store_metadata(self, stats, three_channels=True):
         """Store the relevant miniseed metadata for use later. The orientation of the 3C channel
