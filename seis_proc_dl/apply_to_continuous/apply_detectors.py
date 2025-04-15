@@ -1614,8 +1614,8 @@ class DataLoader:
         start_gap, end_gap = self.format_edge_gaps(st, desired_start, desired_end)
 
         if start_gap is not None:
-            # Don't save gaps less than 0.05 s (5 samples)
-            if start_gap[5] - start_gap[4] >= 0.05:
+            # Don't save gaps less than 0.15 s (15 samples)
+            if start_gap[5] - start_gap[4] >= self.min_gap_seconds:
                 gaps.insert(0, start_gap)
             # Fill the start of the trace with the first value, if needed
             st = st.trim(
@@ -1625,8 +1625,8 @@ class DataLoader:
                 nearest_sample=False,
             )
         if end_gap is not None:
-            # Don't save gaps less than 0.05 s (5 samples)
-            if end_gap[5] - end_gap[4] >= 0.05:
+            # Don't save gaps less than 0.15 s (15 samples)
+            if end_gap[5] - end_gap[4] >= self.min_gap_seconds:
                 gaps += [end_gap]
             # Fill the end of the trace with the last value, if needed
             # set nearest_sample to False or it will extent to the next day
