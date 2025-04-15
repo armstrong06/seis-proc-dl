@@ -323,7 +323,8 @@ class ApplyDetector:
         start_data = time.time()
         # Add row to contdatainfo
         self.db_conn.save_data_info(date, metadata, error=error)
-        # Add gaps
+        # Add gaps - gaps can be None if load_channel_data was never called or an empty list if 
+        # it was called but no gaps exist
         if gaps is not None and len(gaps) > 0:
             self.db_conn.format_and_save_gaps(
                 self.dataloader.simplify_gaps(gaps), self.min_gap_sep_seconds
@@ -332,6 +333,7 @@ class ApplyDetector:
                 f"Time to store contdatainfo and gaps: {time.time() - start_data:0.2f} s"
             )
 
+        # P post probs may not exist if there was an error in loading
         if p_post_probs is not None:
             start_dets = time.time()
             # Save P Detections
@@ -1573,6 +1575,7 @@ class DataLoader:
 
         # Save gaps so I know to ignore any detections in that region later
         # Don't save gaps if they are smaller than 5 samples for 100 Hz, 2 samples for 40 Hz
+        # TODO: May want to increase this to ~0.15 s, there seems to be quite a few gaps with durations ~0.11 s
         gaps = st.get_gaps(min_gap=0.05)
 
         # Get start/end gaps for days without sufficient data and return

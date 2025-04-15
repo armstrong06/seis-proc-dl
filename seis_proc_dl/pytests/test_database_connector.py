@@ -169,6 +169,26 @@ class TestDetectorDBConnection:
             "2013-03-31T23:59:59.00", datetimeformat
         ), "invalid channel offdate"
 
+    def test_get_channel_dates_YMV(self, db_session):
+        session, patch_session = db_session  # Unpack session & patch function
+        db_conn = DetectorDBConnection(3)  # Create instance
+
+        patch_session(db_conn)  # Patch `self.Session` on the instance
+        start, end = db_conn.get_channel_dates(datetime(2023, 1, 1), "YMV", "HH")
+
+        assert start == datetime(2023, 8, 10, 0, 0, 0), "invalid start date"
+        assert end is None, "invalid end date"
+
+    def test_get_channel_dates_YJC(self, db_session):
+        session, patch_session = db_session  # Unpack session & patch function
+        db_conn = DetectorDBConnection(3)  # Create instance
+
+        patch_session(db_conn)  # Patch `self.Session` on the instance
+        start, end = db_conn.get_channel_dates(datetime(2023, 1, 1), "YJC", "HH")
+
+        assert start == datetime(2023, 8, 8, 14, 0, 0), "invalid start date"
+        assert end is None, "invalid end date"
+
     def test_get_channels_1C(self, db_session):
         session, patch_session = db_session  # Unpack session & patch function
         db_conn = DetectorDBConnection(1)  # Create instance
