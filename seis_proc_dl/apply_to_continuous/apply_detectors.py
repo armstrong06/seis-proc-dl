@@ -1277,7 +1277,26 @@ class DataLoader:
         assert abs(endtimes[1] - endtimes[2]) < dt
         assert len(np.unique(npts)) == 1
 
-        cont_data = np.zeros((npts[0], 3))
+        # assert (
+        #     type(st_E[0].data[0]) == np.int32
+        # ), f"Expected E data to be np.int32 but {type(st_E[0].data[0])}"
+        # assert (
+        #     type(st_N[0].data[0]) == np.int32
+        # ), f"Expected N data to be np.int32 but {type(st_N[0].data[0])}"
+        # assert (
+        #     type(st_Z[0].data[0]) == np.int32
+        # ), f"Expected Z data to be np.int32 but {type(st_Z[0].data[0])}"
+        assert np.max(st_E[0].data) < 2**24 and np.min(st_E[0].data) > -(
+            2**24
+        ), "E data too large to be represented accuratley with float32"
+        assert np.max(st_N[0].data) < 2**24 and np.min(st_E[0].data) > -(
+            2**24
+        ), "N data too large to be represented accuratley with float32"
+        assert np.max(st_Z[0].data) < 2**24 and np.min(st_E[0].data) > -(
+            2**24
+        ), "Z data too large to be represented accuratley with float32"
+        # Data from unprocessed mseed files is int32 but resampled mseed files are float64
+        cont_data = np.zeros((npts[0], 3), dtype=np.float32)  # , dtype=np.int32)
         cont_data[:, 0] = st_E[0].data
         cont_data[:, 1] = st_N[0].data
         cont_data[:, 2] = st_Z[0].data
@@ -1317,7 +1336,16 @@ class DataLoader:
         if not load_succeeded:
             return False
 
-        cont_data = np.zeros((st[0].stats.npts, 1))
+        # assert (
+        #     type(st[0].data[0]) == np.int32
+        # ), f"Expected data to be np.int32 but {type(st[0].data[0])}"
+        assert np.max(st[0].data) < 2**24 and np.min(st[0].data) > -(
+            2**24
+        ), "data too large to be represented accuratley with float32"
+        # Data from unprocessed mseed files is int32 but resampled mseed files are float64
+        cont_data = np.zeros(
+            (st[0].stats.npts, 1), dtype=np.float32
+        )  # , dtype=np.int32)
         cont_data[:, 0] = st[0].data
 
         self.continuous_data = cont_data
@@ -1623,7 +1651,6 @@ class DataLoader:
                     tr.stats.delta = delta
 
                 st.merge(fill_value="interpolate")
-
         # Make sure the trace is the desired length (fill in ends if needed)
         # Check for gaps at the start/end of the day and save if they exist
         start_gap, end_gap = self.format_edge_gaps(st, desired_start, desired_end)
