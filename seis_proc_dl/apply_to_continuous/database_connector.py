@@ -329,6 +329,7 @@ class DetectorDBConnection:
 
                 # Check if the detection is on the previous day, if so need to check
                 # for existing picks and handle accordingly
+                insert_new_pick = True
                 if det.time.date() < cdi.date:
                     assert (
                         cdi.prev_appended
@@ -344,12 +345,16 @@ class DetectorDBConnection:
                         max_time=det.time + timedelta(seconds=0.1),
                     )
 
+                    # If there are no close picks, then insert_new_pick = True
                     if len(close_picks) == 0:
                         continue
                     if len(close_picks) > 1:
                         raise NotImplementedError(
                             "There are multiple close picks in the previous day's data..."
                         )
+
+                    # If made it to this point, will update or keep an existing pick
+                    insert_new_pick = False
 
                     # There's only one pick
                     pick = close_picks[0]
@@ -384,7 +389,7 @@ class DetectorDBConnection:
                         # But I think it makes sense to still assign it to the previous day's channel
                         # wf.chan_id = self.channel_info.channel_ids[seed_code]
 
-                else:
+                if insert_new_pick:
                     # Create a pick from the detection
                     pick = services.insert_pick(
                         session,
