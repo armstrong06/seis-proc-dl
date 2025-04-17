@@ -152,9 +152,9 @@ class DetectorDBConnection:
                 db_dict = db_dict | {
                     "samp_rate": metadata_dict["sampling_rate"],
                     "dt": metadata_dict["dt"],
-                    "org_npts": metadata_dict["original_npts"],
-                    "org_start": metadata_dict["original_starttime"],
-                    "org_end": metadata_dict["original_endtime"],
+                    "orig_npts": metadata_dict["original_npts"],
+                    "orig_start": metadata_dict["original_starttime"],
+                    "orig_end": metadata_dict["original_endtime"],
                     "proc_npts": metadata_dict["npts"] if error is None else None,
                     "proc_start": metadata_dict["starttime"] if error is None else None,
                     "proc_end": None,  # just get this from proc_start, samp_rate, and proc_npts
@@ -180,8 +180,8 @@ class DetectorDBConnection:
                 if (
                     contdatainfo.samp_rate != db_dict["samp_rate"]
                     or contdatainfo.dt != db_dict["dt"]
-                    or contdatainfo.org_npts != db_dict["org_npts"]
-                    or contdatainfo.org_start != db_dict["org_start"]
+                    or contdatainfo.orig_npts != db_dict["orig_npts"]
+                    or contdatainfo.orig_start != db_dict["orig_start"]
                     or contdatainfo.proc_start != db_dict["proc_start"]
                     or contdatainfo.proc_npts != db_dict["proc_npts"]
                     or contdatainfo.prev_appended != db_dict["prev_appended"]

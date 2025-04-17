@@ -363,7 +363,7 @@ class TestDetectorDBConnection:
         assert contdatainfo is not None, "contdatainfo not set"
         assert contdatainfo.chan_pref == "HH", "invalid chan_pref"
         assert contdatainfo.date == new_date.date(), "contdatainfo date incorrect"
-        assert contdatainfo.org_start == datetime.strptime(
+        assert contdatainfo.orig_start == datetime.strptime(
             "2013-03-31T01:00:00.00", datetimeformat
         ), "invalid orig_start"
         assert contdatainfo.proc_start is None, "invalid proc_start"
@@ -801,11 +801,9 @@ class TestDetectorDBConnection:
 
         picks = services.get_picks(session, db_conn.station_id, "HH", phase="P")
         assert len(picks) == 3, "incorrect number of total picks"
-        print(metadata["starttime"])
         pick_of_interest = services.get_picks(
             session, db_conn.station_id, "HH", phase="P", min_time=metadata["starttime"]
         )
-        print(pick_of_interest)
         assert (
             len(pick_of_interest) == 1
         ), "incorrect number of picks on previous part of data"
@@ -1122,6 +1120,6 @@ class TestApplyDetectorDB:
         assert contdatainfo is not None, "contdatainfo not set"
         assert contdatainfo.chan_pref == "HHZ", "invalid chan_pref"
         assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
-        assert contdatainfo.org_start is None, "invalid org_start"
+        assert contdatainfo.orig_start is None, "invalid orig_start"
         assert contdatainfo.proc_start is None, "invalid proc_start"
         assert contdatainfo.error == "no_data", "invalid error"
