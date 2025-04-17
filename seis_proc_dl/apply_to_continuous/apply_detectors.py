@@ -265,7 +265,7 @@ class ApplyDetector:
                     f"Incorrect number of files found for {date_str} {stat} {chan}"
                 )
                 file_error_dates.append(date_str)
-                error = f"file_error: Incorrect Number of Files ({len(files)}/{self.ncomps})"
+                error = f"file_error: ({len(files)}/{self.ncomps}) found"
                 # Reset dataloader
                 self.dataloader.error_in_loading()
             else:

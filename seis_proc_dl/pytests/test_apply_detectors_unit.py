@@ -3356,7 +3356,7 @@ if __name__ == "__main__":
     from seis_proc_dl.pytests.test_apply_detectors_unit import TestDataLoader
 
     dltester = TestDataLoader()
-    dltester.test_process_1c_P()
+    dltester.test_load_data_1c_prepend_previous_trimmed()
 
     # from seis_proc_dl.pytests.test_apply_detectors_unit import TestPhaseDetector
     # pdtester = TestPhaseDetector()
