@@ -286,7 +286,7 @@ class DetectorDBConnection:
             d["method"] = self.s_detection_method_id
         return d
 
-    def save_P_post_probs(self, data, expected_array_length=864000, on_event=None):
+    def save_P_post_probs(self, data, expected_array_length=8640000, on_event=None):
         if self.detout_storage_P is None:
             self.detout_storage_P = self._open_dldetection_output_storage(
                 expected_array_length=expected_array_length,
@@ -299,7 +299,7 @@ class DetectorDBConnection:
             self.detout_storage_P, data, self.p_detection_method_id
         )
 
-    def save_S_post_probs(self, data, expected_array_length=864000, on_event=None):
+    def save_S_post_probs(self, data, expected_array_length=8640000, on_event=None):
         if self.detout_storage_S is None:
             self.detout_storage_S = self._open_dldetection_output_storage(
                 expected_array_length=expected_array_length,
