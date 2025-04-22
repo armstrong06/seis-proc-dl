@@ -736,6 +736,7 @@ class ApplyDetector:
                 if db_ids is not None:
                     d["data_id"] = db_ids["data"]
                     d["method_id"] = db_ids["method"]
+                    d["inference_id"] = db_ids["detout"]
 
                 detections.append(d)
                 # widths.append(end_win - start_win)

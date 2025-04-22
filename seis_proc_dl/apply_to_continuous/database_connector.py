@@ -18,6 +18,8 @@ class DailyDetectionDBInfo:
         # TODO If I use bulk inserts, there won't be any detections/picks to store from the insert
         self.detections = None
         self.picks = None
+        self.dldet_output_id_P = None
+        self.dldet_output_id_S = None
 
 
 class ChannelInfo:
@@ -279,11 +281,13 @@ class DetectorDBConnection:
             services.bulk_insert_dldetections_with_gap_check(session, detections)
 
     def get_dldet_fk_ids(self, is_p=True):
-        d = {"data": self.daily_info.contdatainfo_id}
+        d = {"data": self.daily_info.contdatainfo_id,}
         if is_p:
             d["method"] = self.p_detection_method_id
+            d["detout"] = self.daily_info.dldet_output_id_P
         else:
             d["method"] = self.s_detection_method_id
+            d["detout"] = self.daily_info.dldet_output_id_S
         return d
 
     def save_P_post_probs(self, data, expected_array_length=8640000, on_event=None):
@@ -295,9 +299,10 @@ class DetectorDBConnection:
                 on_event=on_event,
             )
 
-        self._save_detection_output(
+        detout = self._save_detection_output(
             self.detout_storage_P, data, self.p_detection_method_id
         )
+        self.daily_info.dldet_output_id_P = detout.id
 
     def save_S_post_probs(self, data, expected_array_length=8640000, on_event=None):
         if self.detout_storage_S is None:
@@ -308,9 +313,10 @@ class DetectorDBConnection:
                 on_event=on_event,
             )
 
-        self._save_detection_output(
+        detout = self._save_detection_output(
             self.detout_storage_S, data, self.s_detection_method_id
         )
+        self.daily_info.dldet_output_id_S = detout.id
 
     def _open_dldetection_output_storage(
         self, expected_array_length, phase, det_method_id, on_event=None
@@ -330,8 +336,8 @@ class DetectorDBConnection:
         session = self.Session()
         with session.begin():
             try:
-                storage.begin_transaction()
-                services.insert_dldetector_output_pytable(
+                storage.start_transaction()
+                detout = services.insert_dldetector_output_pytable(
                     session,
                     storage,
                     self.daily_info.contdatainfo_id,
@@ -343,6 +349,7 @@ class DetectorDBConnection:
                 raise e
 
         storage.commit()
+        return detout
 
     def open_waveform_storages(
         self,
