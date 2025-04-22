@@ -336,6 +336,9 @@ class ApplyDetector:
         # P post probs may not exist if there was an error in loading
         if p_post_probs is not None:
             start_dets = time.time()
+            self.db_conn.save_P_post_probs(
+                p_post_probs, expected_array_length=8640000, on_event=logger.info
+            )
             # Save P Detections
             self.db_conn.save_detections(
                 self.get_detections_from_post_probs(
@@ -366,6 +369,9 @@ class ApplyDetector:
         # Save S detections
         if self.ncomps == 3 and s_post_probs is not None:
             start_dets = time.time()
+            self.db_conn.save_S_post_probs(
+                s_post_probs, expected_array_length=8640000, on_event=logger.info
+            )
             self.db_conn.save_detections(
                 self.get_detections_from_post_probs(
                     s_post_probs,
@@ -467,7 +473,12 @@ class ApplyDetector:
         return True, p_post_probs, s_post_probs
 
     def __apply_to_one_phase(
-        self, detector, proc_func, file_for_name, outdir, debug_N_examples=-1
+        self,
+        detector,
+        proc_func,
+        file_for_name,
+        outdir,
+        debug_N_examples=-1,
     ):
         """Format continuous data and apply phase detector. Write posterior probabilities to disk.
 
@@ -507,9 +518,10 @@ class ApplyDetector:
             end_pad_npts=end_pad_npts,
         )
 
-        detector.save_post_probs(
-            probs_outfile_name, cont_post_probs, self.dataloader.metadata
-        )
+        if self.db_conn is None:
+            detector.save_post_probs(
+                probs_outfile_name, cont_post_probs, self.dataloader.metadata
+            )
 
         return cont_post_probs
 
