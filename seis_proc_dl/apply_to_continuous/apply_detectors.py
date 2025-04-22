@@ -55,6 +55,9 @@ class ApplyDetector:
             ValueError: _description_
             ValueError: _description_
         """
+        # Assuming daily files with 100 Hz sampling rate
+        self.EXPECTED_NUMBER_OF_POSTPROB_SAMPLES = 60*60*24*100
+
         self.p_detector = None
         self.s_detector = None
         # There's only a P processing func because need to specify 1 or 3 c
@@ -293,6 +296,7 @@ class ApplyDetector:
                     error,
                     p_post_probs,
                     s_post_probs,
+                    debug_N_examples=debug_N_examples
                 )
                 logger.debug(
                     f"Total time getting detections and saving info to database: {time.time() - db_start_time:0.2f} s"
@@ -318,8 +322,12 @@ class ApplyDetector:
                 )
 
     def save_daily_results_in_db(
-        self, date, cont_data, metadata, gaps, error, p_post_probs, s_post_probs=None
+        self, date, cont_data, metadata, gaps, error, p_post_probs, s_post_probs=None, debug_N_examples=-1
     ):
+        expected_array_length = self.EXPECTED_NUMBER_OF_POSTPROB_SAMPLES
+        if debug_N_examples > 0:
+            expected_array_length = debug_N_examples*self.sliding_interval
+            
         start_data = time.time()
         # Add row to contdatainfo
         self.db_conn.save_data_info(date, metadata, error=error)
@@ -337,7 +345,7 @@ class ApplyDetector:
         if p_post_probs is not None:
             start_dets = time.time()
             self.db_conn.save_P_post_probs(
-                p_post_probs, expected_array_length=8640000, on_event=logger.info
+                p_post_probs, expected_array_length=expected_array_length, on_event=logger.info
             )
             # Save P Detections
             self.db_conn.save_detections(
@@ -370,7 +378,7 @@ class ApplyDetector:
         if self.ncomps == 3 and s_post_probs is not None:
             start_dets = time.time()
             self.db_conn.save_S_post_probs(
-                s_post_probs, expected_array_length=8640000, on_event=logger.info
+                s_post_probs, expected_array_length=expected_array_length, on_event=logger.info
             )
             self.db_conn.save_detections(
                 self.get_detections_from_post_probs(
