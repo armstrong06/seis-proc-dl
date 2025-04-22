@@ -564,3 +564,18 @@ class DetectorDBConnection:
             raise ValueError("Something is wrong with the channel code")
 
         return chan_ind
+
+    def close_open_pytables(self):
+        if self.detout_storage_P is not None:
+            self.detout_storage_P.close()
+
+        if self.detout_storage_S is not None:
+            self.detout_storage_S.close()
+
+        if self.waveform_storage_dict_P is not None:
+            for key, stor in self.waveform_storage_dict_P.items():
+                stor.close()
+        if self.waveform_storage_dict_S is not None:
+            for key, stor in self.waveform_storage_dict_S.items():
+                stor.close()
+        

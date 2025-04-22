@@ -321,6 +321,9 @@ class ApplyDetector:
                     insufficient_data_dates,
                 )
 
+        if self.db_conn:
+            self.db_conn.close_open_pytables()
+
     def save_daily_results_in_db(
         self, date, cont_data, metadata, gaps, error, p_post_probs, s_post_probs=None, debug_N_examples=-1
     ):
