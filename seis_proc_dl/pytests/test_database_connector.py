@@ -5,6 +5,8 @@ from sqlalchemy import inspect
 from datetime import datetime, timedelta
 from copy import deepcopy
 import numpy as np
+from unittest import mock
+
 from obspy.core import UTCDateTime as UTC
 from seis_proc_dl.apply_to_continuous.database_connector import DetectorDBConnection
 from seis_proc_dl.apply_to_continuous.apply_detectors import ApplyDetector
@@ -18,6 +20,13 @@ dateformat = "%Y-%m-%d"
 # Create a session factory (not bound yet)
 TestSessionFactory = sessionmaker(bind=engine, expire_on_commit=False)
 
+@pytest.fixture
+def mock_pytables_config():
+    with mock.patch(
+        "seis_proc_db.pytables_backend.HDF_BASE_PATH",
+        "./pytests/pytables_outputs",
+    ):
+        yield
 
 @pytest.fixture
 def db_session(monkeypatch):
@@ -969,7 +978,7 @@ class TestApplyDetectorDB:
         return deepcopy([gap1, gap2, gap3])
 
     def test_save_daily_results_in_db_1C(
-        self, db_session, contdatainfo_ex, simple_obspy_gaps_ex
+        self, db_session, contdatainfo_ex, simple_obspy_gaps_ex, mock_pytables_config
     ):
         session, _ = db_session
         applier = ApplyDetector(
@@ -1038,7 +1047,7 @@ class TestApplyDetectorDB:
             wf = services.get_waveforms(session, pick.id)
             assert len(wf) == 1, "invalid wf size"
 
-    def test_apply_to_multiple_days_dumb(self, db_session):
+    def test_apply_to_multiple_days_dumb(self, db_session,mock_pytables_config):
         session, _ = db_session
         applier = ApplyDetector(
             1, apply_detector_config, session_factory=lambda: session
@@ -1047,7 +1056,7 @@ class TestApplyDetectorDB:
             "YWB", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
         )
 
-    def test_save_daily_results_in_db_1C_gaps_empty(self, db_session, contdatainfo_ex):
+    def test_save_daily_results_in_db_1C_gaps_empty(self, db_session, contdatainfo_ex, mock_pytables_config):
         session, _ = db_session
         applier = ApplyDetector(
             1, apply_detector_config, session_factory=lambda: session
@@ -1079,7 +1088,7 @@ class TestApplyDetectorDB:
         )
         assert len(gaps_Z) == 0, "Incorrect number of gaps on HHZ channel"
 
-    def test_save_daily_results_in_db_1C_error(self, db_session, contdatainfo_ex):
+    def test_save_daily_results_in_db_1C_error(self, db_session, contdatainfo_ex, mock_pytables_config):
         session, _ = db_session
         applier = ApplyDetector(
             1, apply_detector_config, session_factory=lambda: session
