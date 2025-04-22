@@ -5,6 +5,7 @@ from sqlalchemy import inspect
 from datetime import datetime, timedelta
 from copy import deepcopy
 import numpy as np
+import os
 from unittest import mock
 
 from obspy.core import UTCDateTime as UTC
@@ -854,6 +855,125 @@ class TestDetectorDBConnection:
             seconds=10 + 0.01
         ), "invalid end for wf[2]"
 
+    def test_open_dldetection_output_storage(self, db_session_with_saved_contdatainfo, mock_pytables_config):
+        session, db_conn = db_session_with_saved_contdatainfo
+        detmethod_id = db_conn.p_detection_method_id
+        try:
+            detout_storage = db_conn._open_dldetection_output_storage(1000, "P", detmethod_id)
+            file_name = detout_storage.file_name
+            # Check that the filename is as would be expected
+            assert (
+                file_name == f"YNR_HH_P_3C_detmethod{detmethod_id:02d}.h5"
+            ), "file name is not as expected"
+            # Check that the file was created
+            assert os.path.exists(detout_storage.file_path), "the file was not created"
+            # Check that the file is set to open
+            assert detout_storage._is_open, "the file is not registered as open"
+            table = detout_storage.table
+            # Check table info
+            assert table.name == "dldetector_output", "the table name is incorrect"
+            assert table.title == "DL detector output", "the table title is incorrect"
+            # Check table attributes
+            assert table.attrs.sta == "YNR", "the table sta attr is incorrect"
+            assert (
+                table.attrs.seed_code == "HH"
+            ), "the table seed_code attr is incorrect"
+            assert table.attrs.ncomps == 3, "the table ncomps attr is incorrect"
+            assert table.attrs.phase == "P", "the table phase attr is incorrect"
+            assert (
+                table.attrs.det_method_id == detmethod_id
+            ), "the table det_method_id attr is incorrect"
+            assert (
+                table.attrs.expected_array_length == 1000
+            ), "the table expected_array_length attr is incorrect"
+        finally:
+            # Clean up
+            if detout_storage is not None:
+                detout_storage.close()
+                os.remove(detout_storage.file_path)
+                assert not os.path.exists(
+                    detout_storage.file_path
+                ), "the file was not removed"
+
+    def test_save_detection_output(self, db_session_with_saved_contdatainfo, mock_pytables_config):
+        session, db_conn = db_session_with_saved_contdatainfo
+        detmethod_id = db_conn.p_detection_method_id
+        try:
+            detout_storage = db_conn._open_dldetection_output_storage(1000, "P", detmethod_id)
+            
+            data = (np.random.rand(1000)*100).astype(np.uint8)
+            detout = db_conn._save_detection_output(detout_storage, data, detmethod_id)
+
+            assert detout.id is not None, "detector_output id is not defined"
+            assert detout.data_id == db_conn.daily_info.contdatainfo_id, "incorrect data_id"
+            assert detout.method_id == detmethod_id, "incorrect method_id"
+            assert detout.hdf_file == detout_storage.file_name, "incorrect filename stored in db"
+
+            assert detout_storage.table.nrows == 1, "incorrect number of rows in the table"
+            assert detout_storage.table[0]["id"] == detout.id, "incorrect id in pytable"
+            assert np.array_equal(detout_storage.table[0]["data"], data), "data incorrect"
+            assert not detout_storage._in_transaction, "transaction wasn't closed"
+        finally:
+            # Clean up
+            if detout_storage is not None:
+                detout_storage.close()
+                os.remove(detout_storage.file_path)
+                assert not os.path.exists(
+                    detout_storage.file_path
+                ), "the file was not removed"
+
+    def test_save_P_post_probs(self, db_session_with_saved_contdatainfo, mock_pytables_config):
+        session, db_conn = db_session_with_saved_contdatainfo
+        data = (np.random.rand(1000)*100).astype(np.uint8)
+        try:
+            assert db_conn.daily_info.dldet_output_id_P is None
+            db_conn.save_P_post_probs(data, 1000)
+            assert db_conn.daily_info.dldet_output_id_P is not None, "dldetector_output.id not stored"
+            assert db_conn.daily_info.dldet_output_id_S is None, "S detout id shouldl be None"
+            detout = session.get(tables.DLDetectorOutput, db_conn.daily_info.dldet_output_id_P)
+            assert detout.method_id == db_conn.p_detection_method_id, "incorrect method id"
+            assert detout is not None, "row not found in db"
+            assert db_conn.detout_storage_P.table.nrows == 1, "data not inserted"
+            assert np.array_equal(db_conn.detout_storage_P.table[0]["data"], data), "data incorrect"
+            assert (
+                db_conn.detout_storage_P.file_name == f"YNR_HH_P_3C_detmethod{detout.method_id:02d}.h5"
+            ), "file name is not as expected"
+        finally:
+            # Clean up
+            if db_conn.detout_storage_P is not None:
+                db_conn.detout_storage_P.close()
+                os.remove(db_conn.detout_storage_P.file_path)
+                assert not os.path.exists(
+                    db_conn.detout_storage_P.file_path
+                ), "the file was not removed"
+
+
+    def test_save_S_post_probs(self, db_session_with_saved_contdatainfo, mock_pytables_config):
+        session, db_conn = db_session_with_saved_contdatainfo
+        data = (np.random.rand(1000)*100).astype(np.uint8)
+        try:
+            assert db_conn.daily_info.dldet_output_id_S is None
+            db_conn.save_S_post_probs(data, 1000)
+            assert db_conn.daily_info.dldet_output_id_S is not None, "dldetector_output.id not stored"
+            assert db_conn.daily_info.dldet_output_id_P is None, "P detout id should be None"
+            detout = session.get(tables.DLDetectorOutput, db_conn.daily_info.dldet_output_id_S)
+            assert detout.method_id == db_conn.s_detection_method_id, "incorrect method id"
+            assert detout is not None, "row not found in db"
+            assert db_conn.detout_storage_S.table.nrows == 1, "data not inserted"
+            assert np.array_equal(db_conn.detout_storage_S.table[0]["data"], data), "data incorrect"
+            assert (
+                db_conn.detout_storage_S.file_name == f"YNR_HH_S_3C_detmethod{detout.method_id:02d}.h5"
+            ), "file name is not as expected"
+        finally:
+            # Clean up
+            if db_conn.detout_storage_S is not None:
+                db_conn.detout_storage_S.close()
+                os.remove(db_conn.detout_storage_S.file_path)
+                assert not os.path.exists(
+                    db_conn.detout_storage_S.file_path
+                ), "the file was not removed"
+
+    
 
 examples_dir = "/uufs/chpc.utah.edu/common/home/u1072028/PycharmProjects/seis_proc_dl/seis_proc_dl/pytests/example_files"
 models_path = "/uufs/chpc.utah.edu/common/home/koper-group3/alysha/selected_models"
