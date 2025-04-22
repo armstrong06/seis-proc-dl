@@ -141,10 +141,10 @@ def close_gaps_ex():
 
 @pytest.fixture
 def detections_ex():
-    d1 = {"sample": 1000, "height": 90, "width": 20}
-    d2 = {"sample": 20000, "height": 70, "width": 30}
-    d3 = {"sample": 30000, "height": 80, "width": 25}
-    d4 = {"sample": 8639500, "height": 90, "width": 15}
+    d1 = {"sample": 1000, "height": 90, "width": 20, "inference_id": None}
+    d2 = {"sample": 20000, "height": 70, "width": 30, "inference_id": None}
+    d3 = {"sample": 30000, "height": 80, "width": 25, "inference_id": None}
+    d4 = {"sample": 8639500, "height": 90, "width": 15, "inference_id": None}
 
     return deepcopy([d1, d2, d3, d4])
 
@@ -775,6 +775,7 @@ class TestDetectorDBConnection:
         det = {"sample": 502, "height": 90, "width": 20, "phase": "P"}
         det["data_id"] = ids["data"]
         det["method_id"] = ids["method"]
+        det["inference_id"] = None
         db_conn.save_detections([det])
         inserted_dets = services.get_dldetections(
             session, ids["data"], ids["method"], 0.0
@@ -1149,6 +1150,11 @@ class TestApplyDetectorDB:
         )
         assert len(gaps_Z) == 3, "Incorrect number of gaps on HHZ channel"
 
+        # Check the Detection Output
+        assert applier.db_conn.detout_storage_P is not None, "detout_storage_P not set"
+        assert applier.db_conn.detout_storage_P.table.nrows == 1, "detout_storage should have 1 entry"
+        assert applier.db_conn.daily_info.dldet_output_id_P is not None, "the detector output does not have an id in the db"
+
         # check the detections
         det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=True)
         inserted_dets = services.get_dldetections(
@@ -1167,6 +1173,9 @@ class TestApplyDetectorDB:
             wf = services.get_waveforms(session, pick.id)
             assert len(wf) == 1, "invalid wf size"
 
+        applier.db_conn.detout_storage_P.close()
+        os.remove(applier.db_conn.detout_storage_P.file_path)
+
     def test_apply_to_multiple_days_dumb(self, db_session,mock_pytables_config):
         session, _ = db_session
         applier = ApplyDetector(
@@ -1175,6 +1184,11 @@ class TestApplyDetectorDB:
         applier.apply_to_multiple_days(
             "YWB", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
         )
+
+        # Check the Detection Output
+        assert not applier.db_conn.detout_storage_P._is_open, "storage should have been closed within apply_to_multiple_days"
+        assert applier.db_conn.daily_info.dldet_output_id_P is not None, "the detector output does not have an id in the db"
+        os.remove(applier.db_conn.detout_storage_P.file_path)
 
     def test_save_daily_results_in_db_1C_gaps_empty(self, db_session, contdatainfo_ex, mock_pytables_config):
         session, _ = db_session
@@ -1207,6 +1221,11 @@ class TestApplyDetectorDB:
             applier.db_conn.daily_info.contdatainfo_id,
         )
         assert len(gaps_Z) == 0, "Incorrect number of gaps on HHZ channel"
+
+        assert applier.db_conn.daily_info.dldet_output_id_P is not None, "the detector output should be set"
+        assert applier.db_conn.detout_storage_P.table.nrows == 1, "detout storage should have 1 entry"
+        applier.db_conn.detout_storage_P.close()
+        os.remove(applier.db_conn.detout_storage_P.file_path)
 
     def test_save_daily_results_in_db_1C_error(self, db_session, contdatainfo_ex, mock_pytables_config):
         session, _ = db_session
@@ -1252,3 +1271,6 @@ class TestApplyDetectorDB:
         assert contdatainfo.orig_start is None, "invalid orig_start"
         assert contdatainfo.proc_start is None, "invalid proc_start"
         assert contdatainfo.error == "no_data", "invalid error"
+
+        assert applier.db_conn.detout_storage_P is None, "detout storage should not be opened"
+        assert applier.db_conn.daily_info.dldet_output_id_P is None, "the detector output should not be set"
