@@ -5,6 +5,7 @@ from copy import deepcopy
 from datetime import timedelta
 from seis_proc_db import database
 from seis_proc_db import services
+from seis_proc_db import pytables_backend
 from seis_proc_db.tables import Waveform, DailyContDataInfo, Channel, DLDetection
 
 # TODO: Think I need to not store ORM objects, use them in the same session only. Just store id's and get other info as needed.
@@ -46,6 +47,14 @@ class DetectorDBConnection:
         self.p_detection_method_id = None
         self.s_detection_method_id = None
         self.daily_info = None
+
+        # BasePyTables storage
+        # Wavefroms will need a storage for each channel - keep them in dicts
+        self.waveform_storage_dict_P = None
+        self.waveform_storage_dict_S = None
+        # Only need one storage per phase for detection outputs
+        self.detout_storage_P = None
+        self.detout_storage_S = None
 
     def get_channel_dates(self, date, stat, seed_code):
         """Returns the start and end times of the relevant channels for a station"""
@@ -276,6 +285,90 @@ class DetectorDBConnection:
         else:
             d["method"] = self.s_detection_method_id
         return d
+
+    def save_P_post_probs(self, data, expected_array_length=864000, on_event=None):
+        if self.detout_storage_P is None:
+            self.detout_storage_P = self._open_dldetection_output_storage(
+                expected_array_length=expected_array_length,
+                phase="P",
+                det_method_id=self.p_detection_method_id,
+                on_event=on_event,
+            )
+
+        self._save_detection_output(
+            self.detout_storage_P, data, self.p_detection_method_id
+        )
+
+    def save_S_post_probs(self, data, expected_array_length=864000, on_event=None):
+        if self.detout_storage_S is None:
+            self.detout_storage_S = self._open_dldetection_output_storage(
+                expected_array_length=expected_array_length,
+                phase="S",
+                det_method_id=self.s_detection_method_id,
+                on_event=on_event,
+            )
+
+        self._save_detection_output(
+            self.detout_storage_S, data, self.s_detection_method_id
+        )
+
+    def _open_dldetection_output_storage(
+        self, expected_array_length, phase, det_method_id, on_event=None
+    ):
+        storage = pytables_backend.DLDetectorOutputStorage(
+            expected_array_length=expected_array_length,
+            sta=self.station_name,
+            seed_code=self.seed_code,
+            ncomps=self.ncomps,
+            phase=phase,
+            det_method_id=det_method_id,
+            on_event=on_event,
+        )
+        return storage
+
+    def _save_detection_output(self, storage, data, det_method_id):
+        session = self.Session()
+        with session.begin():
+            try:
+                storage.begin_transaction()
+                services.insert_dldetector_output_pytable(
+                    session,
+                    storage,
+                    self.daily_info.contdatainfo_id,
+                    det_method_id,
+                    data.astype(np.uint8),
+                )
+            except Exception as e:
+                storage.rollback()
+                raise e
+
+        storage.commit()
+
+    def open_waveform_storages(
+        self,
+        expected_array_length,
+        phase,
+        filt_low,
+        filt_high,
+        proc_notes,
+        channel_ids,
+        on_event=None,
+    ):
+        pytables_storage = {}
+        for seed_code, chan_id in channel_ids.items():
+            pytables_storage[seed_code] = pytables_backend.WaveformStorage(
+                expected_array_length=expected_array_length,
+                sta=self.station_name,
+                seed_code=seed_code,
+                ncomps=self.ncomps,
+                phase=phase,
+                filt_low=filt_low,
+                filt_high=filt_high,
+                proc_notes=proc_notes,
+                on_event=on_event,
+            )
+
+        return pytables_storage
 
     def save_picks_from_detections(
         self,
