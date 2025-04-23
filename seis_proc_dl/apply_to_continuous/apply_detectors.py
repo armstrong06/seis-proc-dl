@@ -438,7 +438,9 @@ class ApplyDetector:
         if outdir is None:
             outdir = self.outdir
 
-        meta_outfile_name = self.dataloader.make_outfile_name(files[0], outdir)
+        meta_outfile_name = None    
+        if self.db_conn is None or not self.use_pytables:
+            meta_outfile_name = self.dataloader.make_outfile_name(files[0], outdir)
         p_post_probs, s_post_probs = None, None
         start_total = time.time()
         if self.ncomps == 1:
