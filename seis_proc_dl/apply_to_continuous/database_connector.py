@@ -430,7 +430,6 @@ class DetectorDBConnection:
             common_wf_details["expected_array_length"] = total_expected_samples
             common_wf_details["phase"] = phase
             common_wf_details["data_id"] = data_id
-            print(common_wf_details)
             try:
                 #### GET THE PYTABLES STORAGE
                 storage_dict = None
@@ -476,7 +475,6 @@ class DetectorDBConnection:
                     pick_waveform_details["wf_start_ind"] = wf_start_ind
                     pick_waveform_details["wf_end_ind"] = wf_end_ind
                     pick_waveform_details["pick_cont_data"] = pick_cont_data
-                    print(pick_waveform_details)
                     # Check if the detection is on the previous day, if so need to check
                     # for existing picks and handle accordingly
                     insert_new_pick = True
