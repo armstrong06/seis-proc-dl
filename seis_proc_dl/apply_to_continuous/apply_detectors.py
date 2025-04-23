@@ -100,6 +100,7 @@ class ApplyDetector:
         self.db_conn = None
         if config.database is not None:
             self.db_conn = DetectorDBConnection(ncomps, session_factory=session_factory)
+            self.use_pytables = config.database.use_pytables
             self.p_det_thresh = config.database.p_det_thresh
             self.p_pick_thresh = config.database.p_pick_thresh
             self.wf_seconds_around_pick = config.database.wf_seconds_around_pick
@@ -224,105 +225,106 @@ class ApplyDetector:
                 f"Valid date range for station {stat}.{chan} is {stat_startdate} - {stat_enddate}. Exiting."
             )
 
-        missing_dates = []
-        file_error_dates = []
-        insufficient_data_dates = []
-        ### Iterate over the specified number of days ###
-        for _ in range(n_days):
-            ### If starting in a new year, reload metadata
-            if date.year > year:
-                year = date.year
-                # I don't actually do anything with the updated dates sooooo
-                # if self.db_conn is None:
-                #     # Only need to do this if reading station XML files from each year
-                #     # database should include all relevant info
-                #     stat_startdate, stat_enddate = self.get_station_dates(year, stat, chan)
-                logger.info(f"Starting in new year ({year})")
+        try:
+            missing_dates = []
+            file_error_dates = []
+            insufficient_data_dates = []
+            ### Iterate over the specified number of days ###
+            for _ in range(n_days):
+                ### If starting in a new year, reload metadata
+                if date.year > year:
+                    year = date.year
+                    # I don't actually do anything with the updated dates sooooo
+                    # if self.db_conn is None:
+                    #     # Only need to do this if reading station XML files from each year
+                    #     # database should include all relevant info
+                    #     stat_startdate, stat_enddate = self.get_station_dates(year, stat, chan)
+                    logger.info(f"Starting in new year ({year})")
 
-            ### The data files are organized Y/m/d, get the appropriate date/station files ###
-            date_str = date.strftime("%Y/%m/%d")
-            files = sorted(
-                glob.glob(os.path.join(self.data_dir, date_str, f"*{stat}*{chan}*"))
-            )
-
-            ### Make the output dirs have the same structure as the data dirs ###
-            date_outdir = os.path.join(self.outdir, date_str)
-
-            error = None
-            p_post_probs = None
-            s_post_probs = None
-            db_continuous_data = None
-            db_contdata_metadata = None
-            db_gaps = None
-            ### If there are no files for that station/day, move to the next day ###
-            if len(files) == 0:
-                logger.info(f"No data for {date_str} {stat} {chan}")
-                missing_dates.append(date_str)
-                error = "no_data"
-                # Reset dataloader
-                self.dataloader.error_in_loading()
-            elif (self.ncomps == 1 and len(files) != 1) or (
-                self.ncomps == 3 and len(files) != 3
-            ):
-                logger.warning(
-                    f"Incorrect number of files found for {date_str} {stat} {chan}"
+                ### The data files are organized Y/m/d, get the appropriate date/station files ###
+                date_str = date.strftime("%Y/%m/%d")
+                files = sorted(
+                    glob.glob(os.path.join(self.data_dir, date_str, f"*{stat}*{chan}*"))
                 )
-                file_error_dates.append(date_str)
-                error = f"file_error: ({len(files)}/{self.ncomps}) found"
-                # Reset dataloader
-                self.dataloader.error_in_loading()
-            else:
-                applied_successfully, p_post_probs, s_post_probs = (
-                    self.apply_to_one_file(
-                        files, date_outdir, debug_N_examples=debug_N_examples
-                    )
-                )
-                db_continuous_data = self.dataloader.continuous_data
-                db_contdata_metadata = self.dataloader.metadata
-                db_gaps = self.dataloader.gaps
-                if not applied_successfully:
-                    insufficient_data_dates.append(date_str)
-                    error = "insufficient_data"
+
+                ### Make the output dirs have the same structure as the data dirs ###
+                date_outdir = os.path.join(self.outdir, date_str)
+
+                error = None
+                p_post_probs = None
+                s_post_probs = None
+                db_continuous_data = None
+                db_contdata_metadata = None
+                db_gaps = None
+                ### If there are no files for that station/day, move to the next day ###
+                if len(files) == 0:
+                    logger.info(f"No data for {date_str} {stat} {chan}")
+                    missing_dates.append(date_str)
+                    error = "no_data"
                     # Reset dataloader
                     self.dataloader.error_in_loading()
+                elif (self.ncomps == 1 and len(files) != 1) or (
+                    self.ncomps == 3 and len(files) != 3
+                ):
+                    logger.warning(
+                        f"Incorrect number of files found for {date_str} {stat} {chan}"
+                    )
+                    file_error_dates.append(date_str)
+                    error = f"file_error: ({len(files)}/{self.ncomps}) found"
+                    # Reset dataloader
+                    self.dataloader.error_in_loading()
+                else:
+                    applied_successfully, p_post_probs, s_post_probs = (
+                        self.apply_to_one_file(
+                            files, date_outdir, debug_N_examples=debug_N_examples
+                        )
+                    )
+                    db_continuous_data = self.dataloader.continuous_data
+                    db_contdata_metadata = self.dataloader.metadata
+                    db_gaps = self.dataloader.gaps
+                    if not applied_successfully:
+                        insufficient_data_dates.append(date_str)
+                        error = "insufficient_data"
+                        # Reset dataloader
+                        self.dataloader.error_in_loading()
 
-            if self.db_conn is not None:
-                db_start_time = time.time()
-                self.save_daily_results_in_db(
-                    date,
-                    db_continuous_data,
-                    db_contdata_metadata,
-                    db_gaps,
-                    error,
-                    p_post_probs,
-                    s_post_probs,
-                    debug_N_examples=debug_N_examples
-                )
-                logger.debug(
-                    f"Total time getting detections and saving info to database: {time.time() - db_start_time:0.2f} s"
-                )
-            date += delta
+                if self.db_conn is not None:
+                    db_start_time = time.time()
+                    self.save_daily_results_in_db(
+                        date,
+                        db_continuous_data,
+                        db_contdata_metadata,
+                        db_gaps,
+                        error,
+                        p_post_probs,
+                        s_post_probs,
+                        debug_N_examples=debug_N_examples
+                    )
+                    logger.debug(
+                        f"Total time getting detections and saving info to database: {time.time() - db_start_time:0.2f} s"
+                    )
+                date += delta
 
-        if self.db_conn is None:
-            if len(missing_dates) > 0:
-                self.write_dates_to_file(
-                    self.outdir, "missing", stat, chan, missing_dates
-                )
-            if len(file_error_dates) > 0:
-                self.write_dates_to_file(
-                    self.outdir, "file_error", stat, chan, file_error_dates
-                )
-            if len(insufficient_data_dates) > 0:
-                self.write_dates_to_file(
-                    self.outdir,
-                    "insufficient_data",
-                    stat,
-                    chan,
-                    insufficient_data_dates,
-                )
-
-        if self.db_conn:
-            self.db_conn.close_open_pytables()
+            if self.db_conn is None:
+                if len(missing_dates) > 0:
+                    self.write_dates_to_file(
+                        self.outdir, "missing", stat, chan, missing_dates
+                    )
+                if len(file_error_dates) > 0:
+                    self.write_dates_to_file(
+                        self.outdir, "file_error", stat, chan, file_error_dates
+                    )
+                if len(insufficient_data_dates) > 0:
+                    self.write_dates_to_file(
+                        self.outdir,
+                        "insufficient_data",
+                        stat,
+                        chan,
+                        insufficient_data_dates,
+                    )
+        finally:
+            if self.db_conn:
+                self.db_conn.close_open_pytables()
 
     def save_daily_results_in_db(
         self, date, cont_data, metadata, gaps, error, p_post_probs, s_post_probs=None, debug_N_examples=-1
@@ -347,9 +349,11 @@ class ApplyDetector:
         # P post probs may not exist if there was an error in loading
         if p_post_probs is not None:
             start_dets = time.time()
-            self.db_conn.save_P_post_probs(
-                p_post_probs, expected_array_length=expected_array_length, on_event=logger.info
-            )
+            # Only save post prob info in db if using pytables
+            if self.use_pytables:
+                self.db_conn.save_P_post_probs(
+                    p_post_probs, expected_array_length=expected_array_length, on_event=logger.info
+                )
             # Save P Detections
             self.db_conn.save_detections(
                 self.get_detections_from_post_probs(
@@ -372,6 +376,8 @@ class ApplyDetector:
                 wf_filt_high=None,
                 wf_proc_notes=self.wf_proc_notes,
                 seconds_around_pick=self.wf_seconds_around_pick,
+                use_pytables=self.use_pytables,
+                on_event=logger.info
             )
             logger.debug(
                 f"Time to store P - picks and waveforms: {time.time() - start_picks:0.2f} s"
@@ -380,9 +386,11 @@ class ApplyDetector:
         # Save S detections
         if self.ncomps == 3 and s_post_probs is not None:
             start_dets = time.time()
-            self.db_conn.save_S_post_probs(
-                s_post_probs, expected_array_length=expected_array_length, on_event=logger.info
-            )
+            # Only save post prob info in db if using pytables
+            if self.use_pytables:
+                self.db_conn.save_S_post_probs(
+                    s_post_probs, expected_array_length=expected_array_length, on_event=logger.info
+                )
             self.db_conn.save_detections(
                 self.get_detections_from_post_probs(
                     s_post_probs,
@@ -404,6 +412,8 @@ class ApplyDetector:
                 wf_filt_high=None,
                 wf_proc_notes=self.wf_proc_notes,
                 seconds_around_pick=self.wf_seconds_around_pick,
+                use_pytables=self.use_pytables,
+                on_event=logger.info
             )
             logger.debug(
                 f"Time to store S - picks and waveforms: {time.time() - start_picks:0.2f} s"
@@ -529,7 +539,8 @@ class ApplyDetector:
             end_pad_npts=end_pad_npts,
         )
 
-        if self.db_conn is None:
+        # Write post_probs to disk if no database or if not using pytables
+        if self.db_conn is None or not self.use_pytables:
             detector.save_post_probs(
                 probs_outfile_name, cont_post_probs, self.dataloader.metadata
             )
