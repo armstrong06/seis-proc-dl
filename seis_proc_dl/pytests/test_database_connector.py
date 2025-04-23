@@ -626,6 +626,7 @@ class TestDetectorDBConnection:
             wf_filt_high=None,
             wf_proc_notes=wf_proc_notes,
             seconds_around_pick=seconds_around_pick,
+            use_pytables=False
         )
 
         params = {
@@ -808,6 +809,7 @@ class TestDetectorDBConnection:
             wf_filt_high=None,
             wf_proc_notes=params["wf_proc_notes"],
             seconds_around_pick=params["seconds_around_pick"],
+            use_pytables=False
         )
 
         picks = services.get_picks(session, db_conn.station_id, "HH", phase="P")
@@ -974,6 +976,282 @@ class TestDetectorDBConnection:
                     db_conn.detout_storage_S.file_path
                 ), "the file was not removed"
 
+    @pytest.fixture
+    def db_session_with_P_picks_and_wfs_pytables(
+        self, db_session_with_P_dldets, contdatainfo_ex, mock_pytables_config
+    ):
+        session, db_conn = db_session_with_P_dldets
+        pick_thresh = 75
+        auth = "TEST"
+        wf_proc_notes = "TEST DATA"
+        seconds_around_pick = 10
+
+        _, metadata = contdatainfo_ex
+        cont_data = np.zeros((metadata["npts"], 3))
+        samples = int(seconds_around_pick * 100)
+        cont_data[1000 - samples : 1000 + samples + 1] = 1
+        cont_data[20000 - samples : 20000 + samples + 1] = 2
+        cont_data[30000 - samples : 30000 + samples + 1] = 3
+        cont_data[(metadata["npts"] - 500) - samples : metadata["npts"]] = 4
+
+        db_conn.save_picks_from_detections(
+            pick_thresh=pick_thresh,
+            is_p=True,
+            auth=auth,
+            continuous_data=cont_data,
+            wf_filt_low=None,
+            wf_filt_high=None,
+            wf_proc_notes=wf_proc_notes,
+            seconds_around_pick=seconds_around_pick,
+            use_pytables=True
+        )
+
+        params = {
+            "pick_thresh": pick_thresh,
+            "auth": auth,
+            "wf_proc_notes": wf_proc_notes,
+            "seconds_around_pick": seconds_around_pick,
+            "samples": samples,
+        }
+
+        return session, db_conn, params
+
+    def test_save_picks_from_detections_pytables(self, db_session_with_P_picks_and_wfs_pytables):
+        session, db_conn, params = db_session_with_P_picks_and_wfs_pytables
+
+        picks = services.get_picks(session, db_conn.station_id, "HH", phase="P")
+        assert len(picks) == 3, "incorrect number of picks"
+        try:
+            for pick in picks:
+                det = session.get(tables.DLDetection, pick.detid)
+                assert det.height > params["pick_thresh"]
+                contdatainfo = session.get(tables.DailyContDataInfo, det.data_id)
+
+                assert (
+                    pick.ptime - timedelta(seconds=(det.sample / contdatainfo.samp_rate))
+                    == contdatainfo.proc_start
+                ), "invalid pick time"
+
+                assert pick.auth == "TEST", "invalid author"
+                assert pick.phase == "P"
+                assert pick.chan_pref == "HH"
+                assert pick.sta_id == db_conn.station_id
+                assert pick.snr is None
+                assert pick.amp is None
+
+                wf_infos = services.get_waveform_infos(session, pick.id)
+                assert len(wf_infos) == 3, "invalid wf_info size"
+
+                wfs = []
+                for wf_info in wf_infos:
+                    row = db_conn.waveform_storage_dict_P[wf_info.chan_id].select_row(wf_info.id)
+                    wfs.append(row["data"][row["start_ind"]:row["end_ind"]])
+
+                assert det.sample in [1000, 30000, 8639500], "incorrect dets saved"
+                if det.sample == 1000:
+                    assert np.all(
+                        wfs[0] == 1
+                    ), "invalid data for wf[0] when det.sample == 1000"
+                    assert np.all(
+                        wfs[1] == 1
+                    ), "invalid data for wf[1] when det.sample == 1000"
+                    assert np.all(
+                        wfs[2] == 1
+                    ), "invalid data for wf[2] when det.sample == 1000"
+                elif det.sample == 30000:
+                    assert np.all(
+                        wfs[0] == 3
+                    ), "invalid data for wf[0] when det.sample == 30000"
+                    assert np.all(
+                        wfs[1] == 3
+                    ), "invalid data for wf[1] when det.sample == 30000"
+                    assert np.all(
+                        wfs[2] == 3
+                    ), "invalid data for wf[2] when det.sample == 30000"
+                elif det.sample == 8639500:
+                    print(wfs)
+                    assert np.all(
+                        wfs[0] == 4
+                    ), "invalid data for wf[0] when det.sample == 8639500"
+                    assert np.all(
+                        wfs[1] == 4
+                    ), "invalid data for wf[1] when det.sample == 8639500"
+                    assert np.all(
+                        wfs[2] == 4
+                    ), "invalid data for wf[2] when det.sample == 8639500"
+
+                assert wf_infos[0].start == pick.ptime - timedelta(
+                    seconds=params["seconds_around_pick"]
+                ), "invalid start for wf[0]"
+                assert wf_infos[1].start == pick.ptime - timedelta(
+                    seconds=params["seconds_around_pick"]
+                ), "invalid start for wf[1]"
+                assert wf_infos[2].start == pick.ptime - timedelta(
+                    seconds=params["seconds_around_pick"]
+                ), "invalid start for wf[2]"
+                assert wf_infos[0].filt_low is None
+                assert wf_infos[1].filt_low is None
+                assert wf_infos[2].filt_low is None
+                assert wf_infos[0].filt_high is None
+                assert wf_infos[1].filt_high is None
+                assert wf_infos[2].filt_high is None
+
+                if det.sample in [1000, 30000]:
+                    assert (
+                        len(wfs[0]) == params["samples"] * 2 + 1
+                    ), "invalid data length for wf[0]"
+                    assert (
+                        len(wfs[1]) == params["samples"] * 2 + 1
+                    ), "invalid data length for wf[1]"
+                    assert (
+                        len(wfs[2]) == params["samples"] * 2 + 1
+                    ), "invalid data length for wf[2]"
+
+                    assert wf_infos[0].end == pick.ptime + timedelta(
+                        seconds=params["seconds_around_pick"] + 0.01
+                    ), "invalid end for wf[0]"
+                    assert wf_infos[1].end == pick.ptime + timedelta(
+                        seconds=params["seconds_around_pick"] + 0.01
+                    ), "invalid end for wf[1]"
+                    assert wf_infos[2].end == pick.ptime + timedelta(
+                        seconds=params["seconds_around_pick"] + 0.01
+                    ), "invalid end for wf[2]"
+                else:
+                    assert (
+                        len(wfs[0]) == 1500
+                    ), "invalid data length for wf[0] for pick at 8639500"
+                    assert (
+                        len(wfs[1]) == 1500
+                    ), "invalid data length for wf[1] for pick at 8639500"
+                    assert (
+                        len(wfs[2]) == 1500
+                    ), "invalid data length for wf[2] for pick at 8639500"
+
+                    assert wf_infos[0].end == pick.ptime + timedelta(
+                        seconds=(500 * 0.01)
+                    ), "invalid end for wf[0]"
+                    assert wf_infos[1].end == pick.ptime + timedelta(
+                        seconds=(500 * 0.01)
+                    ), "invalid end for wf[1]"
+                    assert wf_infos[2].end == pick.ptime + timedelta(
+                        seconds=(500 * 0.01)
+                    ), "invalid end for wf[2]"
+        finally:
+            # Clean up
+            db_conn.close_open_pytables()
+            if db_conn.waveform_storage_dict_P is not None:
+                for _, stor in db_conn.waveform_storage_dict_P.items():
+                    os.remove(stor.file_path)
+                    assert not os.path.exists(
+                        stor.file_path
+                    ), "the file was not removed"
+
+    def test_save_picks_from_detections_handle_append_previous_pytables(
+        self, db_session_with_P_picks_and_wfs_pytables, contdatainfo_ex
+    ):
+        try:
+            session, db_conn, params = db_session_with_P_picks_and_wfs_pytables
+            date, metadata = contdatainfo_ex
+            date = date + timedelta(days=1)
+            metadata["original_starttime"] += timedelta(days=1)
+            metadata["original_endtime"] += timedelta(days=1)
+            metadata["previous_appended"] = True
+            metadata["starttime"] += timedelta(days=1)
+            metadata["starttime"] += -timedelta(seconds=10)
+            metadata["npts"] += 10 * metadata["sampling_rate"]
+            # print(date, metadata)
+
+            # Updat the info to move to the next date
+            db_conn.save_data_info(date, metadata)
+
+            # Make a new detection that is in the previous day's data
+            ids = db_conn.get_dldet_fk_ids(is_p=True)
+            det = {"sample": 502, "height": 90, "width": 20, "phase": "P"}
+            det["data_id"] = ids["data"]
+            det["method_id"] = ids["method"]
+            det["inference_id"] = None
+            db_conn.save_detections([det])
+            inserted_dets = services.get_dldetections(
+                session, ids["data"], ids["method"], 0.0
+            )
+            assert len(inserted_dets) == 1, "incorrect number of dets inserted"
+
+            cont_data = np.zeros((int(metadata["npts"]), 3))
+            samples = int(params["seconds_around_pick"] * 100)
+            cont_data[0 : 502 + samples + 1] = 5
+
+            db_conn.save_picks_from_detections(
+                pick_thresh=params["pick_thresh"],
+                is_p=True,
+                auth=params["auth"],
+                continuous_data=cont_data,
+                wf_filt_low=None,
+                wf_filt_high=None,
+                wf_proc_notes=params["wf_proc_notes"],
+                seconds_around_pick=params["seconds_around_pick"],
+                use_pytables=True
+            )
+
+            picks = services.get_picks(session, db_conn.station_id, "HH", phase="P")
+            assert len(picks) == 3, "incorrect number of total picks"
+            pick_of_interest = services.get_picks(
+                session, db_conn.station_id, "HH", phase="P", min_time=metadata["starttime"]
+            )
+            assert (
+                len(pick_of_interest) == 1
+            ), "incorrect number of picks on previous part of data"
+            pick_of_interest = pick_of_interest[0]
+            assert pick_of_interest.ptime == metadata["starttime"] + timedelta(
+                seconds=(502 * metadata["dt"])
+            ), "incorrect pick time"
+            assert pick_of_interest.detid == inserted_dets[0].id, "incorrect detection id"
+
+            wf_infos = services.get_waveform_infos(session, pick_of_interest.id)
+            assert len(wf_infos) == 3, "invalid wf_info size"
+
+            wfs = []
+            for wf_info in wf_infos:
+                row = db_conn.waveform_storage_dict_P[wf_info.chan_id].select_row(wf_info.id)
+                wfs.append(row["data"][row["start_ind"]:row["end_ind"]])
+            assert len(wfs) == 3, "invalid wf size"
+
+            assert np.all(wfs[0] == 5), "invalid data for wf[0]"
+            assert np.all(wfs[1] == 5), "invalid data for wf[1]"
+            assert np.all(wfs[2] == 5), "invalid data for wf[2]"
+
+            assert wf_infos[0].start == metadata["starttime"], "invalid start for wf[0]"
+            assert wf_infos[1].start == metadata["starttime"], "invalid start for wf[1]"
+            assert wf_infos[2].start == metadata["starttime"], "invalid start for wf[2]"
+            assert wf_infos[0].filt_low is None
+            assert wf_infos[1].filt_low is None
+            assert wf_infos[2].filt_low is None
+            assert wf_infos[0].filt_high is None
+            assert wf_infos[1].filt_high is None
+            assert wf_infos[2].filt_high is None
+
+            # 502 samples before, 1000 + 1 samples after
+            assert len(wfs[0]) == 1503, "invalid data length for wf[0]"
+            assert len(wfs[1]) == 1503, "invalid data length for wf[1]"
+            assert len(wfs[2]) == 1503, "invalid data length for wf[2]"
+
+            assert wf_infos[0].end == pick_of_interest.ptime + timedelta(
+                seconds=10 + 0.01
+            ), "invalid end for wf[0]"
+            assert wf_infos[1].end == pick_of_interest.ptime + timedelta(
+                seconds=10 + 0.01
+            ), "invalid end for wf[1]"
+            assert wf_infos[2].end == pick_of_interest.ptime + timedelta(
+                seconds=10 + 0.01
+            ), "invalid end for wf[2]"
+        finally:
+            # Clean up
+            db_conn.close_open_pytables()
+            if db_conn.waveform_storage_dict_P is not None:
+                for _, stor in db_conn.waveform_storage_dict_P.items():
+                    os.remove(stor.file_path)
+                    assert not os.path.exists(
+                        stor.file_path
+                    ), "the file was not removed"
     
 
 examples_dir = "/uufs/chpc.utah.edu/common/home/u1072028/PycharmProjects/seis_proc_dl/seis_proc_dl/pytests/example_files"

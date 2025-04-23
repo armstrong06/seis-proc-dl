@@ -281,7 +281,9 @@ class DetectorDBConnection:
             services.bulk_insert_dldetections_with_gap_check(session, detections)
 
     def get_dldet_fk_ids(self, is_p=True):
-        d = {"data": self.daily_info.contdatainfo_id,}
+        d = {
+            "data": self.daily_info.contdatainfo_id,
+        }
         if is_p:
             d["method"] = self.p_detection_method_id
             d["detout"] = self.daily_info.dldet_output_id_P
@@ -346,34 +348,41 @@ class DetectorDBConnection:
                 )
             except Exception as e:
                 storage.rollback()
+                self.close_open_pytables()
                 raise e
 
         storage.commit()
         return detout
 
-    def open_waveform_storages(
-        self,
-        expected_array_length,
-        phase,
-        filt_low,
-        filt_high,
-        proc_notes,
-        channel_ids,
-        on_event=None,
-    ):
-        pytables_storage = {}
-        for seed_code, chan_id in channel_ids.items():
-            pytables_storage[seed_code] = pytables_backend.WaveformStorage(
-                expected_array_length=expected_array_length,
-                sta=self.station_name,
-                seed_code=seed_code,
-                ncomps=self.ncomps,
-                phase=phase,
-                filt_low=filt_low,
-                filt_high=filt_high,
-                proc_notes=proc_notes,
-                on_event=on_event,
-            )
+    def _get_waveform_storages(self, is_p, common_wf_details):
+
+        if (is_p and self.waveform_storage_dict_P is None) or (
+            not is_p and self.waveform_storage_dict_S is None
+        ):
+            pytables_storage = {}
+            for seed_code, chan_id in self.channel_info.channel_ids.items():
+                pytables_storage[chan_id] = pytables_backend.WaveformStorage(
+                    expected_array_length=common_wf_details["expected_array_length"],
+                    sta=self.station_name,
+                    seed_code=seed_code,
+                    ncomps=self.ncomps,
+                    phase=common_wf_details["phase"],
+                    filt_low=common_wf_details["wf_filt_low"],
+                    filt_high=common_wf_details["wf_filt_high"],
+                    proc_notes=common_wf_details["wf_proc_notes"],
+                    on_event=common_wf_details["on_event"],
+                )
+
+            if is_p:
+                self.waveform_storage_dict_P = pytables_storage
+            else:
+                self.waveform_storage_dict_S = pytables_storage
+
+        else:
+            if is_p:
+                pytables_storage = self.waveform_storage_dict_P
+            else:
+                pytables_storage = self.waveform_storage_dict_S
 
         return pytables_storage
 
@@ -387,9 +396,20 @@ class DetectorDBConnection:
         wf_filt_high,
         wf_proc_notes,
         seconds_around_pick,
+        use_pytables=True,
+        on_event=None,
     ):
         """Add detections above a certain threshold into the pick table, with the
         necessary additional information"""
+
+        common_wf_details = {
+            "wf_filt_low": wf_filt_low,
+            "wf_filt_high": wf_filt_high,
+            "wf_proc_notes": wf_proc_notes,
+            "use_pytables": use_pytables,
+            "on_event": on_event,
+        }
+        storage_dict = None
 
         session = self.Session()
         with session.begin():
@@ -401,153 +421,273 @@ class DetectorDBConnection:
             else:
                 method_id = self.s_detection_method_id
                 phase = "S"
-
-            # Comput the number of samples to grab on either side of the detection
+            # Compute the number of samples to grab on either side of the detection
             cdi = session.get(DailyContDataInfo, data_id)
             samples_around_pick = int(seconds_around_pick * cdi.samp_rate)
             total_npts = len(continuous_data)
+            total_expected_samples = samples_around_pick * 2 + 1
 
-            # Get all detections for the contdatainfo and method greater than the pick_thresh
-            dldets = services.get_dldetections(
-                session, data_id, method_id, pick_thresh, phase=phase
+            common_wf_details["expected_array_length"] = total_expected_samples
+            common_wf_details["phase"] = phase
+            common_wf_details["data_id"] = data_id
+            print(common_wf_details)
+            try:
+                #### GET THE PYTABLES STORAGE
+                storage_dict = None
+                if use_pytables:
+                    storage_dict = self._get_waveform_storages(is_p, common_wf_details)
+
+                    # Start a transaction for these
+                    for _, chan_storage in storage_dict.items():
+                        chan_storage.start_transaction()
+                #####
+
+                # Get all detections for the contdatainfo and method greater than the pick_thresh
+                dldets = services.get_dldetections(
+                    session, data_id, method_id, pick_thresh, phase=phase
+                )
+
+                # Iterate over the detections
+                for det in dldets:
+                    pick_waveform_details = {}
+
+                    ## Compute the start and end inds for waveforms in pytable
+                    ## Rely on the default values in the storage object
+                    wf_start_ind = 0
+                    wf_end_ind = total_expected_samples
+                    ##
+
+                    # Compute the relevant waveform information for all channels
+                    i1 = det.sample - samples_around_pick
+                    i2 = det.sample + samples_around_pick + 1
+                    if i1 < 0:
+                        wf_start_ind = abs(i1)
+                        i1 = 0
+                    # TODO: Check if this needs a -1
+                    if i2 > total_npts:
+                        wf_end_ind -= i2 - total_npts
+                        i2 = total_npts
+                    pick_cont_data = deepcopy(continuous_data[i1:i2, :])
+                    wf_start = cdi.proc_start + timedelta(seconds=(i1 * cdi.dt))
+                    wf_end = cdi.proc_start + timedelta(seconds=(i2 * cdi.dt))
+                    pick_waveform_details["npts"] = i2 - i1
+                    pick_waveform_details["wf_start"] = wf_start
+                    pick_waveform_details["wf_end"] = wf_end
+                    pick_waveform_details["wf_start_ind"] = wf_start_ind
+                    pick_waveform_details["wf_end_ind"] = wf_end_ind
+                    pick_waveform_details["pick_cont_data"] = pick_cont_data
+                    print(pick_waveform_details)
+                    # Check if the detection is on the previous day, if so need to check
+                    # for existing picks and handle accordingly
+                    insert_new_pick = True
+                    if det.time.date() < cdi.date:
+                        assert (
+                            cdi.prev_appended
+                        ), "Previous data was not appended, yet there is a detection on the previous day..."
+
+                        insert_new_pick = self._potentially_modify_pick_and_waveform(
+                            session,
+                            storage_dict,
+                            det,
+                            pick_waveform_details,
+                            common_wf_details,
+                        )
+
+                    if insert_new_pick:
+                        # Create a pick from the detection
+                        pick = services.insert_pick(
+                            session,
+                            self.station_id,
+                            self.seed_code,
+                            det.phase,
+                            det.time,
+                            auth,
+                            detid=det.id,
+                        )
+
+                        # print(wf_end - det.time)
+                        # print(det.time - wf_start)
+                        # expected_start = det.time - timedelta(seconds=seconds_around_pick)
+                        # expected_end = det.time + timedelta(
+                        #     seconds=seconds_around_pick + cdi.dt
+                        # )
+                        # datetimeformat = "%Y-%m-%dT%H:%M:%S.%f"
+                        # print(
+                        #     "START",
+                        #     expected_start.strftime(datetimeformat),
+                        #     wf_start.strftime(datetimeformat),
+                        # )
+                        # print(
+                        #     "END",
+                        #     expected_end.strftime(datetimeformat),
+                        #     wf_end.strftime(datetimeformat),
+                        # )
+                        # assert (
+                        #     wf_start - expected_start
+                        # ).microseconds == 0, "wf_start different than expected"
+                        # assert (
+                        #     wf_end - expected_end
+                        # ).microseconds == 0, "wf_end different than expected"
+
+                        # Iterate over the different channels
+                        self._insert_new_waveforms(
+                            session,
+                            storage_dict,
+                            pick,
+                            pick_waveform_details,
+                            common_wf_details,
+                        )
+            except Exception as e:
+                if use_pytables:
+                    # Rollback the pytables updates if an error occurs
+                    for _, chan_storage in storage_dict.items():
+                        chan_storage.rollback()
+                    self.close_open_pytables()
+
+                raise e
+
+        if use_pytables:
+            # Commit the pytables updates if everything went well in the database transaction
+            for _, chan_storage in storage_dict.items():
+                chan_storage.commit()
+
+    def _insert_new_waveforms(
+        self, session, storage_dict, pick, pick_wf_details, common_wf_details
+    ):
+        pick_cont_data = pick_wf_details["pick_cont_data"]
+        for seed_code in self.channel_info.channel_ids.keys():
+            chan_id = self.channel_info.channel_ids[seed_code]
+
+            # Get the appropriate channel index of the data
+            chan_ind = self.get_channel_data_index(self.ncomps, seed_code)
+
+            # Get just the channel of interest
+            wf_data = pick_cont_data[:, chan_ind]
+
+            if not common_wf_details["use_pytables"]:
+                # Create the waveform object
+                wf = Waveform(
+                    data_id=common_wf_details["data_id"],
+                    chan_id=chan_id,
+                    filt_low=common_wf_details["wf_filt_low"],
+                    filt_high=common_wf_details["wf_filt_high"],
+                    data=wf_data.tolist(),
+                    start=pick_wf_details["wf_start"],
+                    end=pick_wf_details["wf_end"],
+                    proc_notes=common_wf_details["wf_proc_notes"],
+                )
+                # Add the waveform to the pick
+                pick.wfs.add(wf)
+            else:
+                # Need to flush to get the pick id
+                session.flush()
+                chan_storage = storage_dict[chan_id]
+                pytables_wf_data = np.zeros(
+                    common_wf_details["expected_array_length"], dtype=np.float32
+                )
+                pytables_wf_data[
+                    pick_wf_details["wf_start_ind"] : pick_wf_details["wf_end_ind"]
+                ] = wf_data
+                _ = services.insert_waveform_pytable(
+                    session,
+                    chan_storage,
+                    data=pytables_wf_data,
+                    data_id=common_wf_details["data_id"],
+                    chan_id=chan_id,
+                    pick_id=pick.id,
+                    start=pick_wf_details["wf_start"],
+                    end=pick_wf_details["wf_end"],
+                    filt_low=common_wf_details["wf_filt_low"],
+                    filt_high=common_wf_details["wf_filt_high"],
+                    proc_notes=common_wf_details["wf_proc_notes"],
+                    signal_start_ind=pick_wf_details["wf_start_ind"],
+                    signal_end_ind=pick_wf_details["wf_end_ind"],
+                )
+
+    def _potentially_modify_pick_and_waveform(
+        self,
+        session,
+        storage_dict,
+        detection,
+        pick_waveform_details,
+        common_waveform_details,
+    ):
+        new_pick_needed = True
+        # Check if there are any picks with a ptime close to det.time
+        close_picks = services.get_picks(
+            session,
+            self.station_id,
+            self.seed_code,
+            common_waveform_details["phase"],
+            min_time=detection.time - timedelta(seconds=0.1),
+            max_time=detection.time + timedelta(seconds=0.1),
+        )
+
+        # If there are no close picks, then insert_new_pick = True
+        if len(close_picks) == 0:
+            return new_pick_needed
+        if len(close_picks) > 1:
+            self.close_open_pytables()
+            raise NotImplementedError(
+                "There are multiple close picks in the previous day's data..."
             )
 
-            # Iterate over the detections
-            for det in dldets:
+        # If made it to this point, will update or keep an existing pick
+        new_pick_needed = False
 
-                # Compute the relevant waveform information for all channels
-                i1 = det.sample - samples_around_pick
-                i2 = det.sample + samples_around_pick + 1
-                if i1 < 0:
-                    i1 = 0
-                # TODO: Check if this needs a -1
-                if i2 > total_npts:
-                    i2 = total_npts
-                pick_cont_data = deepcopy(continuous_data[i1:i2, :])
-                wf_start = cdi.proc_start + timedelta(seconds=(i1 * cdi.dt))
-                wf_end = cdi.proc_start + timedelta(seconds=(i2 * cdi.dt))
+        # There's only one pick
+        pick = close_picks[0]
+        prev_data_id = session.get(DLDetection, pick.detid).data_id
 
-                # Check if the detection is on the previous day, if so need to check
-                # for existing picks and handle accordingly
-                insert_new_pick = True
-                if det.time.date() < cdi.date:
-                    assert (
-                        cdi.prev_appended
-                    ), "Previous data was not appended, yet there is a detection on the previous day..."
+        ## Get close waveform or waveform_info.
+        if not common_waveform_details["use_pytables"]:
+            # Get the waveforms for these picks
+            close_wfs = services.get_waveforms(session, pick.id, data_id=prev_data_id)
+            prev_inserted_npts = len(close_wfs[0].data)
+        else:
+            ## This will get waveform info instead of waveform, but they can be treated similarly
+            ## Just the data will need to also be grabbed from a pytable.
+            close_wfs = services.get_waveform_infos(
+                session, pick.id, data_id=prev_data_id
+            )
+            prev_inserted_npts = close_wfs[0].duration_samples
+        ##
 
-                    # Check if there are any picks with a ptime close to det.time
-                    close_picks = services.get_picks(
-                        session,
-                        self.station_id,
-                        self.seed_code,
-                        phase,
-                        min_time=det.time - timedelta(seconds=0.1),
-                        max_time=det.time + timedelta(seconds=0.1),
-                    )
+        # Only update the pick and waveforms if the waveforms would have more continuous data available
+        if prev_inserted_npts > pick_waveform_details["npts"]:
+            return new_pick_needed
 
-                    # If there are no close picks, then insert_new_pick = True
-                    if len(close_picks) == 0:
-                        continue
-                    if len(close_picks) > 1:
-                        raise NotImplementedError(
-                            "There are multiple close picks in the previous day's data..."
-                        )
+        # If so, update the pick time and detection id, everything else should be the same
+        pick.ptime = detection.time
+        pick.detid = detection.id
 
-                    # If made it to this point, will update or keep an existing pick
-                    insert_new_pick = False
+        # This will iterate over Waveform if not using pytables and WaveformInfo otherwise
+        for wf in close_wfs:
+            seed_code = session.get(Channel, wf.chan_id).seed_code
+            # Get the appropriate channel index of the data
+            chan_ind = self.get_channel_data_index(self.ncomps, seed_code)
+            wf.start = pick_waveform_details["wf_start"]
+            wf.end = pick_waveform_details["wf_end"]
+            pick_cont_data = pick_waveform_details["pick_cont_data"]
+            wf.data_id = common_waveform_details["data_id"]
+            if not common_waveform_details["use_pytables"]:
+                # Get just the channel of interest
+                wf.data = pick_cont_data[:, chan_ind].tolist()
+            else:
+                # Pytables expects a fixed length array
+                wf_data = np.zeros(
+                    common_waveform_details["expected_array_length"], dtype=np.float32
+                )
+                wf_start_ind = pick_waveform_details["wf_start_ind"]
+                wf_end_ind = pick_waveform_details["wf_end_ind"]
+                wf_data[wf_start_ind:wf_end_ind] = pick_cont_data[:, chan_ind]
+                # Modify the pytable entry
+                storage_dict[wf.chan_id].modify(wf.id, wf_data, wf_start_ind, wf_end_ind)
+            # TODO: Might want to update this in case the channel switched between days...
+            # But I think it makes sense to still assign it to the previous day's channel
+            # wf.chan_id = self.channel_info.channel_ids[seed_code]
 
-                    # There's only one pick
-                    pick = close_picks[0]
-                    prev_data_id = session.get(DLDetection, pick.detid).data_id
-                    # Get the waveforms for these picks
-                    close_wfs = services.get_waveforms(
-                        session, pick.id, data_id=prev_data_id
-                    )
-
-                    # Only update the pick and waveforms if the waveforms would have more continuous data available
-                    prev_inserted_npts = len(close_wfs[0].data)
-                    if prev_inserted_npts > (i2 - i1):
-                        continue
-
-                    # If so, update the pick time and detection id, everything else should be the same
-                    pick.ptime = det.time
-                    pick.detid = det.id
-
-                    # Update the waveforms assigned to the pick
-                    for wf in close_wfs:
-                        seed_code = session.get(Channel, wf.chan_id).seed_code
-                        # Get the appropriate channel index of the data
-                        chan_ind = self.get_channel_data_index(self.ncomps, seed_code)
-                        # Get just the channel of interest
-                        wf_data = pick_cont_data[:, chan_ind].tolist()
-
-                        wf.data = wf_data
-                        wf.start = wf_start
-                        wf.end = wf_end
-                        wf.data_id = data_id
-                        # TODO: Might want to update this in case the channel switched between days...
-                        # But I think it makes sense to still assign it to the previous day's channel
-                        # wf.chan_id = self.channel_info.channel_ids[seed_code]
-
-                if insert_new_pick:
-                    # Create a pick from the detection
-                    pick = services.insert_pick(
-                        session,
-                        self.station_id,
-                        self.seed_code,
-                        det.phase,
-                        det.time,
-                        auth,
-                        detid=det.id,
-                    )
-
-                    # print(wf_end - det.time)
-                    # print(det.time - wf_start)
-                    # expected_start = det.time - timedelta(seconds=seconds_around_pick)
-                    # expected_end = det.time + timedelta(
-                    #     seconds=seconds_around_pick + cdi.dt
-                    # )
-                    # datetimeformat = "%Y-%m-%dT%H:%M:%S.%f"
-                    # print(
-                    #     "START",
-                    #     expected_start.strftime(datetimeformat),
-                    #     wf_start.strftime(datetimeformat),
-                    # )
-                    # print(
-                    #     "END",
-                    #     expected_end.strftime(datetimeformat),
-                    #     wf_end.strftime(datetimeformat),
-                    # )
-                    # assert (
-                    #     wf_start - expected_start
-                    # ).microseconds == 0, "wf_start different than expected"
-                    # assert (
-                    #     wf_end - expected_end
-                    # ).microseconds == 0, "wf_end different than expected"
-
-                    # Iterate over the different channels
-                    for seed_code in self.channel_info.channel_ids.keys():
-                        chan_id = self.channel_info.channel_ids[seed_code]
-
-                        # Get the appropriate channel index of the data
-                        chan_ind = self.get_channel_data_index(self.ncomps, seed_code)
-
-                        # Get just the channel of interest
-                        wf_data = pick_cont_data[:, chan_ind].tolist()
-
-                        # Create the waveform object
-                        wf = Waveform(
-                            data_id=data_id,
-                            chan_id=chan_id,
-                            filt_low=wf_filt_low,
-                            filt_high=wf_filt_high,
-                            data=wf_data,
-                            start=wf_start,
-                            end=wf_end,
-                            proc_notes=wf_proc_notes,
-                        )
-                        # Add the waveform to the pick
-                        pick.wfs.add(wf)
+        return new_pick_needed
 
     @staticmethod
     def get_channel_data_index(ncomps, seed_code):
@@ -578,4 +718,3 @@ class DetectorDBConnection:
         if self.waveform_storage_dict_S is not None:
             for key, stor in self.waveform_storage_dict_S.items():
                 stor.close()
-        
