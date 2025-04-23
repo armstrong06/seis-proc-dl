@@ -56,7 +56,8 @@ class ApplyDetector:
             ValueError: _description_
         """
         # Assuming daily files with 100 Hz sampling rate
-        self.EXPECTED_NUMBER_OF_POSTPROB_SAMPLES = 60*60*24*100
+        self.EXPECTED_SAMPLING_RATE = 100
+        self.EXPECTED_NUMBER_OF_POSTPROB_SAMPLES = 60*60*24*self.EXPECTED_SAMPLING_RATE
 
         self.p_detector = None
         self.s_detector = None
@@ -332,6 +333,9 @@ class ApplyDetector:
         expected_array_length = self.EXPECTED_NUMBER_OF_POSTPROB_SAMPLES
         if debug_N_examples > 0:
             expected_array_length = debug_N_examples*self.sliding_interval
+         
+        if self.dataloader.store_N_seconds > 0:
+            expected_array_length += self.dataloader.store_N_seconds * self.EXPECTED_SAMPLING_RATE
             
         start_data = time.time()
         # Add row to contdatainfo
