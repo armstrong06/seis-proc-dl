@@ -32,7 +32,7 @@ from seis_proc_dl.apply_to_continuous.database_connector import DetectorDBConnec
 logger = logging.getLogger("apply_detectors")
 stdoutHandler = logging.StreamHandler(stream=sys.stdout)
 fmt = logging.Formatter(
-    "%(name)s: %(asctime)s | %(levelname)s | %(filename)s:%(lineno)s | %(process)d >>> %(message)s",
+    "%(name)s: %(asctime)s | %(levelname)-8s | %(filename)-25s:%(lineno)-4d | %(process)7d >>> %(message)s",
     datefmt="%Y-%m-%dT%H:%M:%SZ",
 )
 stdoutHandler.setFormatter(fmt)
