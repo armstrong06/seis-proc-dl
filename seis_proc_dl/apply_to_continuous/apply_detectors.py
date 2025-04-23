@@ -524,7 +524,6 @@ class ApplyDetector:
         logger.debug(
             f"Time to format continuous data for UNET: {time.time() - starttime:0.2f} s"
         )
-        probs_outfile_name = detector.make_outfile_name(file_for_name, outdir)
 
         if debug_N_examples > 0:
             logger.debug("Reducing data to %d examples", debug_N_examples)
@@ -547,6 +546,7 @@ class ApplyDetector:
 
         # Write post_probs to disk if no database or if not using pytables
         if self.db_conn is None or not self.use_pytables:
+            probs_outfile_name = detector.make_outfile_name(file_for_name, outdir)
             detector.save_post_probs(
                 probs_outfile_name, cont_post_probs, self.dataloader.metadata
             )
