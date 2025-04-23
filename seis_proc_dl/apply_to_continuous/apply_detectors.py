@@ -389,7 +389,7 @@ class ApplyDetector:
             # Only save post prob info in db if using pytables
             if self.use_pytables:
                 self.db_conn.save_S_post_probs(
-                    s_post_probs, expected_array_length=expected_array_length, on_event=logger.info
+                    s_post_probs, expected_array_length=expected_array_length, on_event=logger.debug
                 )
             self.db_conn.save_detections(
                 self.get_detections_from_post_probs(
@@ -413,7 +413,7 @@ class ApplyDetector:
                 wf_proc_notes=self.wf_proc_notes,
                 seconds_around_pick=self.wf_seconds_around_pick,
                 use_pytables=self.use_pytables,
-                on_event=logger.info
+                on_event=logger.debug
             )
             logger.debug(
                 f"Time to store S - picks and waveforms: {time.time() - start_picks:0.2f} s"
