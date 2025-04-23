@@ -301,8 +301,12 @@ class DetectorDBConnection:
                 on_event=on_event,
             )
 
+        if len(data) < expected_array_length:
+            tmp = np.zeros((int(expected_array_length - len(data)), ), dtype=np.uint8)
+            data = np.concatenate([data, tmp])
+
         detout_id = self._save_detection_output(
-            self.detout_storage_P, data, self.p_detection_method_id
+            self.detout_storage_P, data, self.p_detection_method_id,
         )
         self.daily_info.dldet_output_id_P = detout_id
 
@@ -314,6 +318,10 @@ class DetectorDBConnection:
                 det_method_id=self.s_detection_method_id,
                 on_event=on_event,
             )
+
+        if len(data) < expected_array_length:
+            tmp = np.zeros((int(expected_array_length - len(data)), ), dtype=np.uint8)
+            data = np.concatenate([data, tmp])
 
         detout_id = self._save_detection_output(
             self.detout_storage_S, data, self.s_detection_method_id
