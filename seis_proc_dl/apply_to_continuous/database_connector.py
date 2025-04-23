@@ -301,10 +301,10 @@ class DetectorDBConnection:
                 on_event=on_event,
             )
 
-        detout = self._save_detection_output(
+        detout_id = self._save_detection_output(
             self.detout_storage_P, data, self.p_detection_method_id
         )
-        self.daily_info.dldet_output_id_P = detout.id
+        self.daily_info.dldet_output_id_P = detout_id
 
     def save_S_post_probs(self, data, expected_array_length=8640000, on_event=None):
         if self.detout_storage_S is None:
@@ -315,10 +315,10 @@ class DetectorDBConnection:
                 on_event=on_event,
             )
 
-        detout = self._save_detection_output(
+        detout_id = self._save_detection_output(
             self.detout_storage_S, data, self.s_detection_method_id
         )
-        self.daily_info.dldet_output_id_S = detout.id
+        self.daily_info.dldet_output_id_S = detout_id
 
     def _open_dldetection_output_storage(
         self, expected_array_length, phase, det_method_id, on_event=None
@@ -336,6 +336,7 @@ class DetectorDBConnection:
 
     def _save_detection_output(self, storage, data, det_method_id):
         session = self.Session()
+        detout_id = None
         with session.begin():
             try:
                 storage.start_transaction()
@@ -346,13 +347,14 @@ class DetectorDBConnection:
                     det_method_id,
                     data.astype(np.uint8),
                 )
+                detout_id = detout.id
             except Exception as e:
                 storage.rollback()
                 self.close_open_pytables()
                 raise e
 
         storage.commit()
-        return detout
+        return detout_id
 
     def _get_waveform_storages(self, is_p, common_wf_details):
 
