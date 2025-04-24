@@ -9,7 +9,9 @@ from seis_proc_dl.apply_to_continuous import apply_detectors
 ### Handle user inputs for when to run the detector and for which station ###
 argParser = argparse.ArgumentParser()
 argParser.add_argument("--cfg", type=str, help="path to configuration file")
+argParser.add_argument("-net", "--net", type=str, help="network code")
 argParser.add_argument("-s", "--stat", type=str, help="station code")
+argParser.add_argument("-l", "--loc", type=str, help="location code")
 argParser.add_argument("-c", "--chan", type=str, help="First two letter of the channel code")
 argParser.add_argument("-y", "--year", type=int, help="Start year")
 argParser.add_argument("-m", "--month", type=int, help="Start month")
@@ -42,8 +44,8 @@ def import_from_path(module_name, file_path):
 CFG = import_from_path("detector_config", args.cfg).CFG
 
 stime = time.time()
-print(args.stat, args.chan, args.year, args.month, args.day, args.n)
+print(args.net, args.stat, args.loc, args.chan, args.year, args.month, args.day, args.n)
 applier = apply_detectors.ApplyDetector(args.ncomps, CFG)
-applier.apply_to_multiple_days(args.stat, args.chan, args.year, args.month, args.day, args.n)
+applier.apply_to_multiple_days(args.net, args.stat, args.loc, args.chan, args.year, args.month, args.day, args.n)
 etime = time.time()
 print(f"Total time: {etime-stime:0.6f} s")

@@ -159,7 +159,7 @@ class TestDetectorDBConnection:
 
         patch_session(db_conn)  # Patch `self.Session` on the instance
         start, end = db_conn.get_channel_dates(
-            datetime.strptime("2012-10-10T00:00:00.00", datetimeformat), "YNR", "HH"
+            datetime.strptime("2012-10-10T00:00:00.00", datetimeformat), "WY", "YNR", "", "HH",
         )
 
         return session, db_conn, start, end
@@ -170,7 +170,9 @@ class TestDetectorDBConnection:
         assert start == datetime.strptime(
             "2003-09-09T00:00:00.00", datetimeformat
         ), "invalid start"
-        assert end == None, "invalid end"
+        assert end == datetime.strptime(
+            "2013-03-31T23:59:59.00", datetimeformat
+        ), "invalid end"
         assert (
             len(db_conn.channel_info.channel_ids.keys()) == 3
         ), "invalid number of channels"
@@ -186,7 +188,7 @@ class TestDetectorDBConnection:
         db_conn = DetectorDBConnection(3)  # Create instance
 
         patch_session(db_conn)  # Patch `self.Session` on the instance
-        start, end = db_conn.get_channel_dates(datetime(2023, 1, 1), "YMV", "HH")
+        start, end = db_conn.get_channel_dates(datetime(2023, 1, 1), "WY", "YMV", "01", "HH")
 
         assert start == datetime(2023, 8, 10, 0, 0, 0), "invalid start date"
         assert end is None, "invalid end date"
@@ -196,7 +198,7 @@ class TestDetectorDBConnection:
         db_conn = DetectorDBConnection(3)  # Create instance
 
         patch_session(db_conn)  # Patch `self.Session` on the instance
-        start, end = db_conn.get_channel_dates(datetime(2023, 1, 1), "YJC", "HH")
+        start, end = db_conn.get_channel_dates(datetime(2023, 1, 1), "WY", "YJC", "01", "HH")
 
         assert start == datetime(2023, 8, 8, 14, 0, 0), "invalid start date"
         assert end is None, "invalid end date"
@@ -207,13 +209,14 @@ class TestDetectorDBConnection:
         patch_session(db_conn)  # Patch `self.Session` on the instance
 
         start, end = db_conn.get_channel_dates(
-            datetime.strptime("2012-10-10T00:00:00.00", datetimeformat), "QLMT", "EHZ"
+            datetime.strptime("2012-10-10T00:00:00.00", datetimeformat), "MB", "QLMT", "", "EHZ"
         )
-
         assert start == datetime.strptime(
             "2001-06-09T00:00:00.00", datetimeformat
         ), "invalid start"
-        assert end == None, "invalid end"
+        assert end == datetime.strptime(
+            "2019-03-21T16:40:00.00", datetimeformat
+        ), "invalid end"
         assert (
             len(db_conn.channel_info.channel_ids.keys()) == 1
         ), "invalid number of channels"
@@ -1020,7 +1023,7 @@ class TestDetectorDBConnection:
             file_name = detout_storage.file_name
             # Check that the filename is as would be expected
             assert (
-                file_name == f"YNR_HH_P_3C_detmethod{detmethod_id:02d}.h5"
+                file_name == f"WY.YNR..HH.P.3C.detmethod{detmethod_id:02d}.h5"
             ), "file name is not as expected"
             # Check that the file was created
             assert os.path.exists(detout_storage.file_path), "the file was not created"
@@ -1121,7 +1124,7 @@ class TestDetectorDBConnection:
             ), "data incorrect"
             assert (
                 db_conn.detout_storage_P.file_name
-                == f"YNR_HH_P_3C_detmethod{detout.method_id:02d}.h5"
+                == f"WY.YNR..HH.P.3C.detmethod{detout.method_id:02d}.h5"
             ), "file name is not as expected"
         finally:
             # Clean up
@@ -1159,7 +1162,7 @@ class TestDetectorDBConnection:
             ), "data incorrect"
             assert (
                 db_conn.detout_storage_S.file_name
-                == f"YNR_HH_S_3C_detmethod{detout.method_id:02d}.h5"
+                == f"WY.YNR..HH.S.3C.detmethod{detout.method_id:02d}.h5"
             ), "file name is not as expected"
         finally:
             # Clean up
@@ -1895,7 +1898,7 @@ class TestApplyDetectorDB:
         p_post_probs[56000] = 50
         p_post_probs[75000] = 45
 
-        applier.db_conn.get_channel_dates(date, "YNR", "HHZ")
+        applier.db_conn.get_channel_dates(date, "WY", "YNR", "", "HHZ")
 
         applier.save_daily_results_in_db(
             date, continuous_data, metadata, gaps, error, p_post_probs
@@ -1975,7 +1978,7 @@ class TestApplyDetectorDB:
         s_post_probs[56005] = 55
         s_post_probs[75005] = 75
 
-        applier.db_conn.get_channel_dates(date, "YNR", "HHZ")
+        applier.db_conn.get_channel_dates(date, "WY", "YNR", "", "HHZ")
 
         applier.save_daily_results_in_db(
             date,
@@ -2060,7 +2063,7 @@ class TestApplyDetectorDB:
             1, apply_detector_config, session_factory=lambda: session
         )
         applier.apply_to_multiple_days(
-            "YWB", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
+            "WY", "YWB", "", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
         )
 
     def test_save_daily_results_in_db_1C_gaps_empty(
@@ -2083,7 +2086,7 @@ class TestApplyDetectorDB:
         p_post_probs[56000] = 50
         p_post_probs[75000] = 45
 
-        applier.db_conn.get_channel_dates(date, "YNR", "HHZ")
+        applier.db_conn.get_channel_dates(date, "WY", "YNR", "", "HHZ")
 
         applier.save_daily_results_in_db(
             date, continuous_data, metadata, gaps, error, p_post_probs
@@ -2116,7 +2119,7 @@ class TestApplyDetectorDB:
         continuous_data = None
         p_post_probs = None
 
-        applier.db_conn.get_channel_dates(date, "YNR", "HHZ")
+        applier.db_conn.get_channel_dates(date, "WY", "YNR", "", "HHZ")
 
         applier.save_daily_results_in_db(
             date, continuous_data, None, gaps, error, p_post_probs
@@ -2195,7 +2198,7 @@ class TestApplyDetectorDBPytables:
         p_post_probs[56000] = 50
         p_post_probs[75000] = 45
 
-        applier.db_conn.get_channel_dates(date, "YNR", "HHZ")
+        applier.db_conn.get_channel_dates(date, "WY", "YNR", "", "HHZ")
         try:
             applier.save_daily_results_in_db(
                 date, continuous_data, metadata, gaps, error, p_post_probs
@@ -2297,7 +2300,7 @@ class TestApplyDetectorDBPytables:
         s_post_probs[56000] = 55
         s_post_probs[75000] = 75
 
-        applier.db_conn.get_channel_dates(date, "YNR", "HH")
+        applier.db_conn.get_channel_dates(date, "WY", "YNR", "", "HH")
         try:
             applier.save_daily_results_in_db(
                 date, continuous_data, metadata, gaps, error, p_post_probs, s_post_probs
@@ -2424,7 +2427,7 @@ class TestApplyDetectorDBPytables:
         )
         try:
             applier.apply_to_multiple_days(
-                "YWB", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
+                "WY", "YWB", "", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
             )
 
             # Check the Detection Output
@@ -2463,7 +2466,7 @@ class TestApplyDetectorDBPytables:
         p_post_probs[56000] = 50
         p_post_probs[75000] = 45
 
-        applier.db_conn.get_channel_dates(date, "YNR", "HHZ")
+        applier.db_conn.get_channel_dates(date, "WY", "YNR", "", "HHZ")
         try:
             applier.save_daily_results_in_db(
                 date, continuous_data, metadata, gaps, error, p_post_probs
@@ -2504,7 +2507,7 @@ class TestApplyDetectorDBPytables:
         continuous_data = None
         p_post_probs = None
 
-        applier.db_conn.get_channel_dates(date, "YNR", "HHZ")
+        applier.db_conn.get_channel_dates(date, "WY", "YNR", "", "HHZ")
 
         applier.save_daily_results_in_db(
             date, continuous_data, None, gaps, error, p_post_probs

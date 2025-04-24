@@ -50,4 +50,4 @@ with open(os.path.join(outfile), "w") as f:
     f.write(f"{len(selected_chans)}\n")
     for chan in selected_chans:
         chan_comps = chan.split(".")
-        f.write(f"{chan_comps[1]} {chan_comps[3]}\n")
+        f.write(f"{chan_comps[0]} {chan_comps[1]} {chan_comps[2]} {chan_comps[3]}\n")

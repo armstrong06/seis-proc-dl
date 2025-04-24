@@ -255,7 +255,7 @@ class TestApplyDetector:
     def test_apply_to_multiple_days_missing(self):
         applier = apply_detectors.ApplyDetector(1, apply_detector_config)
         applier.apply_to_multiple_days(
-            "YWB", "EHZ", 2002, 1, 3, 4, debug_N_examples=256
+            "WY", "YWB", "", "EHZ", 2002, 1, 3, 4, debug_N_examples=256
         )
 
         assert applier.dataloader.metadata is None
@@ -296,7 +296,7 @@ class TestApplyDetector:
     def test_apply_to_multiple_days_file_error(self):
         applier = apply_detectors.ApplyDetector(3, apply_detector_config)
         applier.apply_to_multiple_days(
-            "YMR", "HH?", 2002, 1, 2, 2, debug_N_examples=256
+            "WY", "YMR", "", "HH?", 2002, 1, 2, 2, debug_N_examples=256
         )
 
         # Make sure reset worked
@@ -347,7 +347,7 @@ class TestApplyDetector:
         applier = apply_detectors.ApplyDetector(1, apply_detector_config_fail)
         # First day has a gap but the second day doesn't
         applier.apply_to_multiple_days(
-            "YMR", "HH?", 2002, 1, 1, 2, debug_N_examples=256
+            "WY", "YMR", "", "HH?", 2002, 1, 1, 2, debug_N_examples=256
         )
 
         assert applier.dataloader.metadata is not None
@@ -697,7 +697,7 @@ class TestApplyDetector:
         # ..EHN       100.0 Hz  1993-10-26 to 2002-08-29
         with pytest.raises(ValueError):
             applier.apply_to_multiple_days(
-                "YJC", "EH?", 2002, 10, 1, 2, debug_N_examples=256
+                "WY", "YJC", "", "EH?", 2002, 10, 1, 2, debug_N_examples=256
             )
 
     def test_apply_to_multiple_days_1c_new_year(self):
@@ -706,7 +706,7 @@ class TestApplyDetector:
     def test_apply_to_multiple_days_1c(self):
         applier = apply_detectors.ApplyDetector(1, apply_detector_config)
         applier.apply_to_multiple_days(
-            "YWB", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
+            "WY", "YWB", "", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
         )
 
         # Day 1
@@ -762,7 +762,7 @@ class TestApplyDetector:
     def test_apply_to_multiple_days_1c_npz(self):
         applier = apply_detectors.ApplyDetector(1, apply_detector_config_npz)
         applier.apply_to_multiple_days(
-            "YWB", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
+           "WY", "YWB", "", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
         )
 
         # Day 1
@@ -812,7 +812,7 @@ class TestApplyDetector:
     def test_apply_to_multiple_days_3c(self):
         applier = apply_detectors.ApplyDetector(3, apply_detector_config)
         applier.apply_to_multiple_days(
-            "YMR", "HH?", 2002, 1, 1, 2, debug_N_examples=256
+            "WY", "YMR", "", "HH?", 2002, 1, 1, 2, debug_N_examples=256
         )
 
         # Day 1
@@ -886,7 +886,7 @@ class TestApplyDetector:
     def test_apply_to_multiple_days_3c_npz(self):
         applier = apply_detectors.ApplyDetector(3, apply_detector_config_npz)
         applier.apply_to_multiple_days(
-            "YMR", "HH?", 2002, 1, 1, 2, debug_N_examples=256
+            "WY", "YMR", "", "HH?", 2002, 1, 1, 2, debug_N_examples=256
         )
 
         # Day 1
@@ -2580,7 +2580,7 @@ class TestApplyDetectorSyncronousOpenVino:
         applier = apply_detectors.ApplyDetector(1, apply_sync_openvino_detector_config)
         assert applier.p_detector.openvino_compiled is True
         applier.apply_to_multiple_days(
-            "YWB", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
+            "WY", "YWB", "", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
         )
 
         # Day 1
@@ -2638,7 +2638,7 @@ class TestApplyDetectorSyncronousOpenVino:
         assert applier.p_detector.openvino_compiled is True
         assert applier.s_detector.openvino_compiled is True
         applier.apply_to_multiple_days(
-            "YMR", "HH?", 2002, 1, 1, 2, debug_N_examples=256
+            "WY", "YMR", "", "HH?", 2002, 1, 1, 2, debug_N_examples=256
         )
 
         # Day 1
@@ -2777,7 +2777,7 @@ class TestApplyDetectorSyncronousOpenVino:
             1, apply_sync_openvino_detector_config_npz
         )
         applier.apply_to_multiple_days(
-            "YWB", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
+            "WY", "YWB", "", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
         )
 
         # Day 1
@@ -2829,7 +2829,7 @@ class TestApplyDetectorSyncronousOpenVino:
             3, apply_sync_openvino_detector_config_npz
         )
         applier.apply_to_multiple_days(
-            "YMR", "HH?", 2002, 1, 1, 2, debug_N_examples=256
+            "WY", "YMR", "", "HH?", 2002, 1, 1, 2, debug_N_examples=256
         )
 
         # Day 1
@@ -3035,7 +3035,7 @@ class TestApplyDetectorAsyncronousOpenVino:
         applier = apply_detectors.ApplyDetector(1, apply_async_openvino_detector_config)
         assert applier.p_detector.openvino_compiled is True
         applier.apply_to_multiple_days(
-            "YWB", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
+            "WY", "YWB", "", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
         )
 
         # Day 1
@@ -3093,7 +3093,7 @@ class TestApplyDetectorAsyncronousOpenVino:
         assert applier.p_detector.openvino_compiled is True
         assert applier.s_detector.openvino_compiled is True
         applier.apply_to_multiple_days(
-            "YMR", "HH?", 2002, 1, 1, 2, debug_N_examples=256
+            "WY", "YMR", "", "HH?", 2002, 1, 1, 2, debug_N_examples=256
         )
 
         # Day 1
@@ -3232,7 +3232,7 @@ class TestApplyDetectorAsyncronousOpenVino:
             1, apply_async_openvino_detector_config_npz
         )
         applier.apply_to_multiple_days(
-            "YWB", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
+            "WY", "YWB", "", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
         )
 
         # Day 1
@@ -3284,7 +3284,7 @@ class TestApplyDetectorAsyncronousOpenVino:
             3, apply_async_openvino_detector_config_npz
         )
         applier.apply_to_multiple_days(
-            "YMR", "HH?", 2002, 1, 1, 2, debug_N_examples=256
+            "WY", "YMR", "", "HH?", 2002, 1, 1, 2, debug_N_examples=256
         )
 
         # Day 1

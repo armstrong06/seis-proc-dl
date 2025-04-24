@@ -43,6 +43,8 @@ class DetectorDBConnection:
 
         self.station_name = None
         self.seed_code = None
+        self.net = None
+        self.loc = None
 
         self.station_id = None
         self.channel_info = None
@@ -58,25 +60,26 @@ class DetectorDBConnection:
         self.detout_storage_P = None
         self.detout_storage_S = None
 
-    def get_channel_dates(self, date, stat, seed_code):
+    def get_channel_dates(self, date, net, stat, loc, seed_code):
         """Returns the start and end times of the relevant channels for a station"""
         # The database will handel the "?" differently
         if len(seed_code) == 3 and self.ncomps == 3:
             seed_code = seed_code[:-1]
         self.seed_code = seed_code
         self.station_name = stat
+        self.net = net
+        self.loc = loc
         with self.Session() as session:
             with session.begin():
-
                 # Get all channels for this station name and channel type
                 all_channels = services.get_common_station_channels_by_name(
-                    session, stat, seed_code
+                    session,  stat,  seed_code, net=net, loc=loc
                 )
 
                 # Get the Station object and the Channel objects for the appropriate date
                 selected_stat, selected_channels = (
                     services.get_operating_channels_by_station_name(
-                        session, stat, seed_code, date
+                        session, stat, seed_code, date, net=net, loc=loc
                     )
                 )
 
@@ -337,7 +340,9 @@ class DetectorDBConnection:
     ):
         storage = pytables_backend.DLDetectorOutputStorage(
             expected_array_length=expected_array_length,
+            net=self.net,
             sta=self.station_name,
+            loc=self.loc,
             seed_code=self.seed_code,
             ncomps=self.ncomps,
             phase=phase,
@@ -377,7 +382,9 @@ class DetectorDBConnection:
             for seed_code, chan_id in self.channel_info.channel_ids.items():
                 pytables_storage[chan_id] = pytables_backend.WaveformStorage(
                     expected_array_length=common_wf_details["expected_array_length"],
+                    net=self.net,
                     sta=self.station_name,
+                    loc=self.loc,
                     seed_code=seed_code,
                     ncomps=self.ncomps,
                     phase=common_wf_details["phase"],

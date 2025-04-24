@@ -182,7 +182,7 @@ class ApplyDetector:
         self.p_proc_func = self.dataloader.process_3c_P
 
     def apply_to_multiple_days(
-        self, stat, chan, year, month, day, n_days, debug_N_examples=-1
+        self, net, stat, loc, chan, year, month, day, n_days, debug_N_examples=-1
     ):
         """Apply the phase detector to multiple days of data for a single station/channel. Assumes data
         is stored in YYYY/MM/DD folder in the data directory specified in the config file. Writes output
@@ -216,7 +216,7 @@ class ApplyDetector:
             stat_startdate, stat_enddate = self.get_station_dates(year, stat, chan)
         else:
             stat_startdate, stat_enddate = self.db_conn.get_channel_dates(
-                date, stat, chan
+                date, net, stat, loc, chan
             )
         date, n_days = self.validate_date_range(
             stat_startdate, stat_enddate, date, n_days
@@ -245,7 +245,7 @@ class ApplyDetector:
                 ### The data files are organized Y/m/d, get the appropriate date/station files ###
                 date_str = date.strftime("%Y/%m/%d")
                 files = sorted(
-                    glob.glob(os.path.join(self.data_dir, date_str, f"*{stat}*{chan}*"))
+                    glob.glob(os.path.join(self.data_dir, date_str, f"*{net}.{stat}.{loc}.{chan}*"))
                 )
 
                 ### Make the output dirs have the same structure as the data dirs ###
