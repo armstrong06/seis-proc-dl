@@ -21,6 +21,7 @@ dateformat = "%Y-%m-%d"
 # Create a session factory (not bound yet)
 TestSessionFactory = sessionmaker(bind=engine, expire_on_commit=False)
 
+
 @pytest.fixture
 def mock_pytables_config():
     with mock.patch(
@@ -28,6 +29,7 @@ def mock_pytables_config():
         "./pytests/pytables_outputs",
     ):
         yield
+
 
 @pytest.fixture
 def db_session(monkeypatch):
@@ -626,7 +628,7 @@ class TestDetectorDBConnection:
             wf_filt_high=None,
             wf_proc_notes=wf_proc_notes,
             seconds_around_pick=seconds_around_pick,
-            use_pytables=False
+            use_pytables=False,
         )
 
         params = {
@@ -809,7 +811,7 @@ class TestDetectorDBConnection:
             wf_filt_high=None,
             wf_proc_notes=params["wf_proc_notes"],
             seconds_around_pick=params["seconds_around_pick"],
-            use_pytables=False
+            use_pytables=False,
         )
 
         picks = services.get_picks(session, db_conn.station_id, "HH", phase="P")
@@ -858,11 +860,15 @@ class TestDetectorDBConnection:
             seconds=10 + 0.01
         ), "invalid end for wf[2]"
 
-    def test_open_dldetection_output_storage(self, db_session_with_saved_contdatainfo, mock_pytables_config):
+    def test_open_dldetection_output_storage(
+        self, db_session_with_saved_contdatainfo, mock_pytables_config
+    ):
         session, db_conn = db_session_with_saved_contdatainfo
         detmethod_id = db_conn.p_detection_method_id
         try:
-            detout_storage = db_conn._open_dldetection_output_storage(1000, "P", detmethod_id)
+            detout_storage = db_conn._open_dldetection_output_storage(
+                1000, "P", detmethod_id
+            )
             file_name = detout_storage.file_name
             # Check that the filename is as would be expected
             assert (
@@ -898,23 +904,38 @@ class TestDetectorDBConnection:
                     detout_storage.file_path
                 ), "the file was not removed"
 
-    def test_save_detection_output(self, db_session_with_saved_contdatainfo, mock_pytables_config):
+    def test_save_detection_output(
+        self, db_session_with_saved_contdatainfo, mock_pytables_config
+    ):
         session, db_conn = db_session_with_saved_contdatainfo
         detmethod_id = db_conn.p_detection_method_id
         try:
-            detout_storage = db_conn._open_dldetection_output_storage(1000, "P", detmethod_id)
-            
-            data = (np.random.rand(1000)*100).astype(np.uint8)
-            detout = db_conn._save_detection_output(detout_storage, data, detmethod_id)
+            detout_storage = db_conn._open_dldetection_output_storage(
+                1000, "P", detmethod_id
+            )
 
-            assert detout.id is not None, "detector_output id is not defined"
-            assert detout.data_id == db_conn.daily_info.contdatainfo_id, "incorrect data_id"
+            data = (np.random.rand(1000) * 100).astype(np.uint8)
+            detout_id = db_conn._save_detection_output(
+                detout_storage, data, detmethod_id
+            )
+
+            assert detout_id is not None, "detector_output id is not defined"
+            detout = session.get(tables.DLDetectorOutput, detout_id)
+            assert (
+                detout.data_id == db_conn.daily_info.contdatainfo_id
+            ), "incorrect data_id"
             assert detout.method_id == detmethod_id, "incorrect method_id"
-            assert detout.hdf_file == detout_storage.file_name, "incorrect filename stored in db"
+            assert (
+                detout.hdf_file == detout_storage.file_name
+            ), "incorrect filename stored in db"
 
-            assert detout_storage.table.nrows == 1, "incorrect number of rows in the table"
+            assert (
+                detout_storage.table.nrows == 1
+            ), "incorrect number of rows in the table"
             assert detout_storage.table[0]["id"] == detout.id, "incorrect id in pytable"
-            assert np.array_equal(detout_storage.table[0]["data"], data), "data incorrect"
+            assert np.array_equal(
+                detout_storage.table[0]["data"], data
+            ), "data incorrect"
             assert not detout_storage._in_transaction, "transaction wasn't closed"
         finally:
             # Clean up
@@ -925,21 +946,34 @@ class TestDetectorDBConnection:
                     detout_storage.file_path
                 ), "the file was not removed"
 
-    def test_save_P_post_probs(self, db_session_with_saved_contdatainfo, mock_pytables_config):
+    def test_save_P_post_probs(
+        self, db_session_with_saved_contdatainfo, mock_pytables_config
+    ):
         session, db_conn = db_session_with_saved_contdatainfo
-        data = (np.random.rand(1000)*100).astype(np.uint8)
+        data = (np.random.rand(1000) * 100).astype(np.uint8)
         try:
             assert db_conn.daily_info.dldet_output_id_P is None
             db_conn.save_P_post_probs(data, 1000)
-            assert db_conn.daily_info.dldet_output_id_P is not None, "dldetector_output.id not stored"
-            assert db_conn.daily_info.dldet_output_id_S is None, "S detout id shouldl be None"
-            detout = session.get(tables.DLDetectorOutput, db_conn.daily_info.dldet_output_id_P)
-            assert detout.method_id == db_conn.p_detection_method_id, "incorrect method id"
+            assert (
+                db_conn.daily_info.dldet_output_id_P is not None
+            ), "dldetector_output.id not stored"
+            assert (
+                db_conn.daily_info.dldet_output_id_S is None
+            ), "S detout id shouldl be None"
+            detout = session.get(
+                tables.DLDetectorOutput, db_conn.daily_info.dldet_output_id_P
+            )
+            assert (
+                detout.method_id == db_conn.p_detection_method_id
+            ), "incorrect method id"
             assert detout is not None, "row not found in db"
             assert db_conn.detout_storage_P.table.nrows == 1, "data not inserted"
-            assert np.array_equal(db_conn.detout_storage_P.table[0]["data"], data), "data incorrect"
+            assert np.array_equal(
+                db_conn.detout_storage_P.table[0]["data"], data
+            ), "data incorrect"
             assert (
-                db_conn.detout_storage_P.file_name == f"YNR_HH_P_3C_detmethod{detout.method_id:02d}.h5"
+                db_conn.detout_storage_P.file_name
+                == f"YNR_HH_P_3C_detmethod{detout.method_id:02d}.h5"
             ), "file name is not as expected"
         finally:
             # Clean up
@@ -950,22 +984,34 @@ class TestDetectorDBConnection:
                     db_conn.detout_storage_P.file_path
                 ), "the file was not removed"
 
-
-    def test_save_S_post_probs(self, db_session_with_saved_contdatainfo, mock_pytables_config):
+    def test_save_S_post_probs(
+        self, db_session_with_saved_contdatainfo, mock_pytables_config
+    ):
         session, db_conn = db_session_with_saved_contdatainfo
-        data = (np.random.rand(1000)*100).astype(np.uint8)
+        data = (np.random.rand(1000) * 100).astype(np.uint8)
         try:
             assert db_conn.daily_info.dldet_output_id_S is None
             db_conn.save_S_post_probs(data, 1000)
-            assert db_conn.daily_info.dldet_output_id_S is not None, "dldetector_output.id not stored"
-            assert db_conn.daily_info.dldet_output_id_P is None, "P detout id should be None"
-            detout = session.get(tables.DLDetectorOutput, db_conn.daily_info.dldet_output_id_S)
-            assert detout.method_id == db_conn.s_detection_method_id, "incorrect method id"
+            assert (
+                db_conn.daily_info.dldet_output_id_S is not None
+            ), "dldetector_output.id not stored"
+            assert (
+                db_conn.daily_info.dldet_output_id_P is None
+            ), "P detout id should be None"
+            detout = session.get(
+                tables.DLDetectorOutput, db_conn.daily_info.dldet_output_id_S
+            )
+            assert (
+                detout.method_id == db_conn.s_detection_method_id
+            ), "incorrect method id"
             assert detout is not None, "row not found in db"
             assert db_conn.detout_storage_S.table.nrows == 1, "data not inserted"
-            assert np.array_equal(db_conn.detout_storage_S.table[0]["data"], data), "data incorrect"
+            assert np.array_equal(
+                db_conn.detout_storage_S.table[0]["data"], data
+            ), "data incorrect"
             assert (
-                db_conn.detout_storage_S.file_name == f"YNR_HH_S_3C_detmethod{detout.method_id:02d}.h5"
+                db_conn.detout_storage_S.file_name
+                == f"YNR_HH_S_3C_detmethod{detout.method_id:02d}.h5"
             ), "file name is not as expected"
         finally:
             # Clean up
@@ -1003,7 +1049,7 @@ class TestDetectorDBConnection:
             wf_filt_high=None,
             wf_proc_notes=wf_proc_notes,
             seconds_around_pick=seconds_around_pick,
-            use_pytables=True
+            use_pytables=True,
         )
 
         params = {
@@ -1016,7 +1062,9 @@ class TestDetectorDBConnection:
 
         return session, db_conn, params
 
-    def test_save_picks_from_detections_pytables(self, db_session_with_P_picks_and_wfs_pytables):
+    def test_save_picks_from_detections_pytables(
+        self, db_session_with_P_picks_and_wfs_pytables
+    ):
         session, db_conn, params = db_session_with_P_picks_and_wfs_pytables
 
         picks = services.get_picks(session, db_conn.station_id, "HH", phase="P")
@@ -1028,7 +1076,8 @@ class TestDetectorDBConnection:
                 contdatainfo = session.get(tables.DailyContDataInfo, det.data_id)
 
                 assert (
-                    pick.ptime - timedelta(seconds=(det.sample / contdatainfo.samp_rate))
+                    pick.ptime
+                    - timedelta(seconds=(det.sample / contdatainfo.samp_rate))
                     == contdatainfo.proc_start
                 ), "invalid pick time"
 
@@ -1044,8 +1093,10 @@ class TestDetectorDBConnection:
 
                 wfs = []
                 for wf_info in wf_infos:
-                    row = db_conn.waveform_storage_dict_P[wf_info.chan_id].select_row(wf_info.id)
-                    wfs.append(row["data"][row["start_ind"]:row["end_ind"]])
+                    row = db_conn.waveform_storage_dict_P[wf_info.chan_id].select_row(
+                        wf_info.id
+                    )
+                    wfs.append(row["data"][row["start_ind"] : row["end_ind"]])
 
                 assert det.sample in [1000, 30000, 8639500], "incorrect dets saved"
                 if det.sample == 1000:
@@ -1189,13 +1240,17 @@ class TestDetectorDBConnection:
                 wf_filt_high=None,
                 wf_proc_notes=params["wf_proc_notes"],
                 seconds_around_pick=params["seconds_around_pick"],
-                use_pytables=True
+                use_pytables=True,
             )
 
             picks = services.get_picks(session, db_conn.station_id, "HH", phase="P")
             assert len(picks) == 3, "incorrect number of total picks"
             pick_of_interest = services.get_picks(
-                session, db_conn.station_id, "HH", phase="P", min_time=metadata["starttime"]
+                session,
+                db_conn.station_id,
+                "HH",
+                phase="P",
+                min_time=metadata["starttime"],
             )
             assert (
                 len(pick_of_interest) == 1
@@ -1204,15 +1259,19 @@ class TestDetectorDBConnection:
             assert pick_of_interest.ptime == metadata["starttime"] + timedelta(
                 seconds=(502 * metadata["dt"])
             ), "incorrect pick time"
-            assert pick_of_interest.detid == inserted_dets[0].id, "incorrect detection id"
+            assert (
+                pick_of_interest.detid == inserted_dets[0].id
+            ), "incorrect detection id"
 
             wf_infos = services.get_waveform_infos(session, pick_of_interest.id)
             assert len(wf_infos) == 3, "invalid wf_info size"
 
             wfs = []
             for wf_info in wf_infos:
-                row = db_conn.waveform_storage_dict_P[wf_info.chan_id].select_row(wf_info.id)
-                wfs.append(row["data"][row["start_ind"]:row["end_ind"]])
+                row = db_conn.waveform_storage_dict_P[wf_info.chan_id].select_row(
+                    wf_info.id
+                )
+                wfs.append(row["data"][row["start_ind"] : row["end_ind"]])
             assert len(wfs) == 3, "invalid wf size"
 
             assert np.all(wfs[0] == 5), "invalid data for wf[0]"
@@ -1252,7 +1311,7 @@ class TestDetectorDBConnection:
                     assert not os.path.exists(
                         stor.file_path
                     ), "the file was not removed"
-    
+
 
 examples_dir = "/uufs/chpc.utah.edu/common/home/u1072028/PycharmProjects/seis_proc_dl/seis_proc_dl/pytests/example_files"
 models_path = "/uufs/chpc.utah.edu/common/home/koper-group3/alysha/selected_models"
@@ -1292,9 +1351,10 @@ apply_detector_config = {
         "wf_seconds_around_pick": 10,
         "pick_author": "SPDL",
         "min_gap_separation_seconds": 5,
-        "use_pytables": False
+        "use_pytables": False,
     },
 }
+
 
 @pytest.fixture
 def simple_obspy_gaps_ex():
@@ -1332,6 +1392,7 @@ def simple_obspy_gaps_ex():
     ]
 
     return deepcopy([gap1, gap2, gap3])
+
 
 class TestApplyDetectorDB:
     def test_init_3c(self, db_session):
@@ -1450,107 +1511,112 @@ class TestApplyDetectorDB:
             assert len(wf) == 1, "invalid wf size"
 
     def test_save_daily_results_in_db_3C(
-            self, db_session, contdatainfo_ex, simple_obspy_gaps_ex, mock_pytables_config
-        ):
-            session, _ = db_session
-            applier = ApplyDetector(
-                3, apply_detector_config, session_factory=lambda: session
-            )
+        self, db_session, contdatainfo_ex, simple_obspy_gaps_ex, mock_pytables_config
+    ):
+        session, _ = db_session
+        applier = ApplyDetector(
+            3, apply_detector_config, session_factory=lambda: session
+        )
 
-            date, metadata = contdatainfo_ex
-            gaps = simple_obspy_gaps_ex
-            error = None
+        date, metadata = contdatainfo_ex
+        gaps = simple_obspy_gaps_ex
+        error = None
 
-            continuous_data = np.zeros((metadata["npts"], 3))
-            p_post_probs = np.zeros(metadata["npts"])
-            p_post_probs[10000] = 90
-            p_post_probs[25000] = 80
-            p_post_probs[40000] = 75
-            p_post_probs[56000] = 50
-            p_post_probs[75000] = 45
+        continuous_data = np.zeros((metadata["npts"], 3))
+        p_post_probs = np.zeros(metadata["npts"])
+        p_post_probs[10000] = 90
+        p_post_probs[25000] = 80
+        p_post_probs[40000] = 75
+        p_post_probs[56000] = 50
+        p_post_probs[75000] = 45
 
-            s_post_probs = np.zeros(metadata["npts"])
-            s_post_probs[10005] = 95
-            s_post_probs[25005] = 85
-            s_post_probs[40005] = 80
-            s_post_probs[56005] = 55
-            s_post_probs[75005] = 75
+        s_post_probs = np.zeros(metadata["npts"])
+        s_post_probs[10005] = 95
+        s_post_probs[25005] = 85
+        s_post_probs[40005] = 80
+        s_post_probs[56005] = 55
+        s_post_probs[75005] = 75
 
+        applier.db_conn.get_channel_dates(date, "YNR", "HHZ")
 
-            applier.db_conn.get_channel_dates(date, "YNR", "HHZ")
+        applier.save_daily_results_in_db(
+            date,
+            continuous_data,
+            metadata,
+            gaps,
+            error,
+            p_post_probs,
+            s_post_probs=s_post_probs,
+        )
 
-            applier.save_daily_results_in_db(
-                date, continuous_data, metadata, gaps, error, p_post_probs, s_post_probs=s_post_probs
-            )
+        # check the metadata
+        assert (
+            applier.db_conn.daily_info.date == date
+        ), "invalid date in DailyDetectionDBInfo"
+        assert (
+            applier.db_conn.daily_info.contdatainfo_id is not None
+        ), "contdatainfo id not set"
+        contdatainfo = session.get(
+            tables.DailyContDataInfo, applier.db_conn.daily_info.contdatainfo_id
+        )
+        assert inspect(contdatainfo).persistent, "contdatainfo not persistent"
+        assert contdatainfo is not None, "contdatainfo not set"
+        assert contdatainfo.chan_pref == "HH", "invalid chan_pref"
+        assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
+        assert contdatainfo.proc_start == datetime.strptime(
+            "2013-03-31T00:00:00.00", datetimeformat
+        ), "invalid proc_start"
 
-            # check the metadata
-            assert (
-                applier.db_conn.daily_info.date == date
-            ), "invalid date in DailyDetectionDBInfo"
-            assert (
-                applier.db_conn.daily_info.contdatainfo_id is not None
-            ), "contdatainfo id not set"
-            contdatainfo = session.get(
-                tables.DailyContDataInfo, applier.db_conn.daily_info.contdatainfo_id
-            )
-            assert inspect(contdatainfo).persistent, "contdatainfo not persistent"
-            assert contdatainfo is not None, "contdatainfo not set"
-            assert contdatainfo.chan_pref == "HH", "invalid chan_pref"
-            assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
-            assert contdatainfo.proc_start == datetime.strptime(
-                "2013-03-31T00:00:00.00", datetimeformat
-            ), "invalid proc_start"
+        # check the gaps
+        gaps_Z = services.get_gaps(
+            session,
+            applier.db_conn.channel_info.channel_ids["HHZ"],
+            applier.db_conn.daily_info.contdatainfo_id,
+        )
+        assert len(gaps_Z) == 3, "Incorrect number of gaps on HHZ channel"
 
-            # check the gaps
-            gaps_Z = services.get_gaps(
-                session,
-                applier.db_conn.channel_info.channel_ids["HHZ"],
-                applier.db_conn.daily_info.contdatainfo_id,
-            )
-            assert len(gaps_Z) == 3, "Incorrect number of gaps on HHZ channel"
+        # Check the Detection Output
+        assert applier.db_conn.detout_storage_P is None, "detout_storage_P is set"
+        assert applier.db_conn.detout_storage_S is None, "detout_storage_S is set"
 
-            # Check the Detection Output
-            assert applier.db_conn.detout_storage_P is None, "detout_storage_P is set"
-            assert applier.db_conn.detout_storage_S is None, "detout_storage_S is set"
+        # check the detections
+        det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=True)
+        inserted_dets_P = services.get_dldetections(
+            session, det_fk_ids["data"], det_fk_ids["method"], 0.0, phase="P"
+        )
+        assert len(inserted_dets_P) == 4, "incorrect number of P detections inserted"
 
-            # check the detections
-            det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=True)
-            inserted_dets_P = services.get_dldetections(
-                session, det_fk_ids["data"], det_fk_ids["method"], 0.0, phase="P"
-            )
-            assert len(inserted_dets_P) == 4, "incorrect number of P detections inserted"
+        # check the picks
+        p_picks = services.get_picks(
+            session, applier.db_conn.station_id, "HH", phase="P"
+        )
+        assert len(p_picks) == 3, "incorrect number of P picks"
 
-            # check the picks
-            p_picks = services.get_picks(
-                session, applier.db_conn.station_id, "HH", phase="P"
-            )
-            assert len(p_picks) == 3, "incorrect number of P picks"
+        # check the waveforms
+        for pick in p_picks:
+            wf = services.get_waveforms(session, pick.id)
+            assert len(wf) == 3, "invalid wf size"
 
-            # check the waveforms
-            for pick in p_picks:
-                wf = services.get_waveforms(session, pick.id)
-                assert len(wf) == 3, "invalid wf size"
+        ## S
+        # check the detections
+        det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=False)
+        inserted_dets_S = services.get_dldetections(
+            session, det_fk_ids["data"], det_fk_ids["method"], 0.0, phase="S"
+        )
+        assert len(inserted_dets_S) == 5, "incorrect number of S detections inserted"
 
-            ## S
-            # check the detections
-            det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=False)
-            inserted_dets_S = services.get_dldetections(
-                session, det_fk_ids["data"], det_fk_ids["method"], 0.0, phase="S"
-            )
-            assert len(inserted_dets_S) == 5, "incorrect number of S detections inserted"
+        # check the picks
+        s_picks = services.get_picks(
+            session, applier.db_conn.station_id, "HH", phase="S"
+        )
+        assert len(s_picks) == 4, "incorrect number of picks"
 
-            # check the picks
-            s_picks = services.get_picks(
-                session, applier.db_conn.station_id, "HH", phase="S"
-            )
-            assert len(s_picks) == 4, "incorrect number of picks"
+        # check the waveforms
+        for pick in s_picks:
+            wf = services.get_waveforms(session, pick.id)
+            assert len(wf) == 3, "invalid wf size"
 
-            # check the waveforms
-            for pick in s_picks:
-                wf = services.get_waveforms(session, pick.id)
-                assert len(wf) == 3, "invalid wf size"
-
-    def test_apply_to_multiple_days_dumb(self, db_session,mock_pytables_config):
+    def test_apply_to_multiple_days_dumb(self, db_session, mock_pytables_config):
         session, _ = db_session
         applier = ApplyDetector(
             1, apply_detector_config, session_factory=lambda: session
@@ -1559,7 +1625,9 @@ class TestApplyDetectorDB:
             "YWB", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
         )
 
-    def test_save_daily_results_in_db_1C_gaps_empty(self, db_session, contdatainfo_ex, mock_pytables_config):
+    def test_save_daily_results_in_db_1C_gaps_empty(
+        self, db_session, contdatainfo_ex, mock_pytables_config
+    ):
         session, _ = db_session
         applier = ApplyDetector(
             1, apply_detector_config, session_factory=lambda: session
@@ -1591,9 +1659,13 @@ class TestApplyDetectorDB:
         )
         assert len(gaps_Z) == 0, "Incorrect number of gaps on HHZ channel"
 
-        assert applier.db_conn.daily_info.dldet_output_id_P is None, "the detector output should not be set"
+        assert (
+            applier.db_conn.daily_info.dldet_output_id_P is None
+        ), "the detector output should not be set"
 
-    def test_save_daily_results_in_db_1C_error(self, db_session, contdatainfo_ex, mock_pytables_config):
+    def test_save_daily_results_in_db_1C_error(
+        self, db_session, contdatainfo_ex, mock_pytables_config
+    ):
         session, _ = db_session
         applier = ApplyDetector(
             1, apply_detector_config, session_factory=lambda: session
@@ -1638,12 +1710,17 @@ class TestApplyDetectorDB:
         assert contdatainfo.proc_start is None, "invalid proc_start"
         assert contdatainfo.error == "no_data", "invalid error"
 
-        assert applier.db_conn.detout_storage_P is None, "detout storage should not be opened"
-        assert applier.db_conn.daily_info.dldet_output_id_P is None, "the detector output should not be set"
+        assert (
+            applier.db_conn.detout_storage_P is None
+        ), "detout storage should not be opened"
+        assert (
+            applier.db_conn.daily_info.dldet_output_id_P is None
+        ), "the detector output should not be set"
 
 
 apply_detector_config_pytables = deepcopy(apply_detector_config)
 apply_detector_config_pytables["database"]["use_pytables"] = True
+
 
 class TestApplyDetectorDBPytables:
     def test_init_3c(self, db_session):
@@ -1713,9 +1790,15 @@ class TestApplyDetectorDBPytables:
             assert len(gaps_Z) == 3, "Incorrect number of gaps on HHZ channel"
 
             # Check the Detection Output
-            assert applier.db_conn.detout_storage_P is not None, "detout_storage_P not set"
-            assert applier.db_conn.detout_storage_P.table.nrows == 1, "detout_storage should have 1 entry"
-            assert applier.db_conn.daily_info.dldet_output_id_P is not None, "the detector output does not have an id in the db"
+            assert (
+                applier.db_conn.detout_storage_P is not None
+            ), "detout_storage_P not set"
+            assert (
+                applier.db_conn.detout_storage_P.table.nrows == 1
+            ), "detout_storage should have 1 entry"
+            assert (
+                applier.db_conn.daily_info.dldet_output_id_P is not None
+            ), "the detector output does not have an id in the db"
 
             # check the detections
             det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=True)
@@ -1737,7 +1820,12 @@ class TestApplyDetectorDBPytables:
             for pick in picks:
                 wf_info = services.get_waveform_infos(session, pick.id)
                 assert len(wf_info) == 1, "invalid wf_info size"
-                assert applier.db_conn.waveform_storage_dict_P[wf_info[0].chan_id].select_row(wf_info[0].id) is not None, "no waveform data found for corresponding wf_info.id"
+                assert (
+                    applier.db_conn.waveform_storage_dict_P[
+                        wf_info[0].chan_id
+                    ].select_row(wf_info[0].id)
+                    is not None
+                ), "no waveform data found for corresponding wf_info.id"
         finally:
             applier.db_conn.close_open_pytables()
             os.remove(applier.db_conn.detout_storage_P.file_path)
@@ -1804,14 +1892,26 @@ class TestApplyDetectorDBPytables:
             assert len(gaps_Z) == 3, "Incorrect number of gaps on HHZ channel"
 
             # Check the Detection Output
-            assert applier.db_conn.detout_storage_P is not None, "detout_storage_P not set"
-            assert applier.db_conn.detout_storage_P.table.nrows == 1, "detout_storage_P should have 1 entry"
-            assert applier.db_conn.daily_info.dldet_output_id_P is not None, "the P detector output does not have an id in the db"
+            assert (
+                applier.db_conn.detout_storage_P is not None
+            ), "detout_storage_P not set"
+            assert (
+                applier.db_conn.detout_storage_P.table.nrows == 1
+            ), "detout_storage_P should have 1 entry"
+            assert (
+                applier.db_conn.daily_info.dldet_output_id_P is not None
+            ), "the P detector output does not have an id in the db"
 
             # Check the Detection Output
-            assert applier.db_conn.detout_storage_S is not None, "detout_storage_S not set"
-            assert applier.db_conn.detout_storage_S.table.nrows == 1, "detout_storage_S should have 1 entry"
-            assert applier.db_conn.daily_info.dldet_output_id_S is not None, "the S detector output does not have an id in the db"
+            assert (
+                applier.db_conn.detout_storage_S is not None
+            ), "detout_storage_S not set"
+            assert (
+                applier.db_conn.detout_storage_S.table.nrows == 1
+            ), "detout_storage_S should have 1 entry"
+            assert (
+                applier.db_conn.daily_info.dldet_output_id_S is not None
+            ), "the S detector output does not have an id in the db"
 
             # check the detections
             det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=True)
@@ -1833,7 +1933,12 @@ class TestApplyDetectorDBPytables:
             for pick in p_picks:
                 wf_info = services.get_waveform_infos(session, pick.id)
                 assert len(wf_info) == 3, "invalid P wf_info size"
-                assert applier.db_conn.waveform_storage_dict_P[wf_info[0].chan_id].select_row(wf_info[0].id) is not None, "no P waveform data found for corresponding wf_info.id"
+                assert (
+                    applier.db_conn.waveform_storage_dict_P[
+                        wf_info[0].chan_id
+                    ].select_row(wf_info[0].id)
+                    is not None
+                ), "no P waveform data found for corresponding wf_info.id"
 
             # S
             # check the detections
@@ -1841,7 +1946,9 @@ class TestApplyDetectorDBPytables:
             s_inserted_dets = services.get_dldetections(
                 session, det_fk_ids["data"], det_fk_ids["method"], 0.0, phase="S"
             )
-            assert len(s_inserted_dets) == 5, "incorrect number of S detections inserted"
+            assert (
+                len(s_inserted_dets) == 5
+            ), "incorrect number of S detections inserted"
 
             # check the picks
             s_picks = services.get_picks(
@@ -1856,7 +1963,12 @@ class TestApplyDetectorDBPytables:
             for pick in s_picks:
                 wf_info = services.get_waveform_infos(session, pick.id)
                 assert len(wf_info) == 3, "invalid S wf_info size"
-                assert applier.db_conn.waveform_storage_dict_S[wf_info[0].chan_id].select_row(wf_info[0].id) is not None, "no S waveform data found for corresponding wf_info.id"
+                assert (
+                    applier.db_conn.waveform_storage_dict_S[
+                        wf_info[0].chan_id
+                    ].select_row(wf_info[0].id)
+                    is not None
+                ), "no S waveform data found for corresponding wf_info.id"
 
         finally:
             applier.db_conn.close_open_pytables()
@@ -1867,7 +1979,7 @@ class TestApplyDetectorDBPytables:
             for cid, cstore in applier.db_conn.waveform_storage_dict_S.items():
                 os.remove(cstore.file_path)
 
-    def test_apply_to_multiple_days_dumb(self, db_session,mock_pytables_config):
+    def test_apply_to_multiple_days_dumb(self, db_session, mock_pytables_config):
         session, _ = db_session
         applier = ApplyDetector(
             1, apply_detector_config_pytables, session_factory=lambda: session
@@ -1878,8 +1990,12 @@ class TestApplyDetectorDBPytables:
             )
 
             # Check the Detection Output
-            assert not applier.db_conn.detout_storage_P._is_open, "storage should have been closed within apply_to_multiple_days"
-            assert applier.db_conn.daily_info.dldet_output_id_P is not None, "the detector output does not have an id in the db"
+            assert (
+                not applier.db_conn.detout_storage_P._is_open
+            ), "storage should have been closed within apply_to_multiple_days"
+            assert (
+                applier.db_conn.daily_info.dldet_output_id_P is not None
+            ), "the detector output does not have an id in the db"
 
             for cid, cstore in applier.db_conn.waveform_storage_dict_P.items():
                 assert not cstore._is_open, "waveform storage should have been closed"
@@ -1889,7 +2005,9 @@ class TestApplyDetectorDBPytables:
             for cid, cstore in applier.db_conn.waveform_storage_dict_P.items():
                 os.remove(cstore.file_path)
 
-    def test_save_daily_results_in_db_1C_gaps_empty(self, db_session, contdatainfo_ex, mock_pytables_config):
+    def test_save_daily_results_in_db_1C_gaps_empty(
+        self, db_session, contdatainfo_ex, mock_pytables_config
+    ):
         session, _ = db_session
         applier = ApplyDetector(
             1, apply_detector_config_pytables, session_factory=lambda: session
@@ -1921,15 +2039,21 @@ class TestApplyDetectorDBPytables:
             )
             assert len(gaps_Z) == 0, "Incorrect number of gaps on HHZ channel"
 
-            assert applier.db_conn.daily_info.dldet_output_id_P is not None, "the detector output should be set"
-            assert applier.db_conn.detout_storage_P.table.nrows == 1, "detout storage should have 1 entry"
+            assert (
+                applier.db_conn.daily_info.dldet_output_id_P is not None
+            ), "the detector output should be set"
+            assert (
+                applier.db_conn.detout_storage_P.table.nrows == 1
+            ), "detout storage should have 1 entry"
         finally:
             applier.db_conn.close_open_pytables()
             os.remove(applier.db_conn.detout_storage_P.file_path)
             for cid, cstore in applier.db_conn.waveform_storage_dict_P.items():
                 os.remove(cstore.file_path)
 
-    def test_save_daily_results_in_db_1C_error(self, db_session, contdatainfo_ex, mock_pytables_config):
+    def test_save_daily_results_in_db_1C_error(
+        self, db_session, contdatainfo_ex, mock_pytables_config
+    ):
         session, _ = db_session
         applier = ApplyDetector(
             1, apply_detector_config_pytables, session_factory=lambda: session
@@ -1974,6 +2098,12 @@ class TestApplyDetectorDBPytables:
         assert contdatainfo.proc_start is None, "invalid proc_start"
         assert contdatainfo.error == "no_data", "invalid error"
 
-        assert applier.db_conn.detout_storage_P is None, "detout storage should not be opened"
-        assert applier.db_conn.daily_info.dldet_output_id_P is None, "the detector output should not be set"
-        assert applier.db_conn.waveform_storage_dict_P is None, "waveform storage should not be opened"
+        assert (
+            applier.db_conn.detout_storage_P is None
+        ), "detout storage should not be opened"
+        assert (
+            applier.db_conn.daily_info.dldet_output_id_P is None
+        ), "the detector output should not be set"
+        assert (
+            applier.db_conn.waveform_storage_dict_P is None
+        ), "waveform storage should not be opened"
