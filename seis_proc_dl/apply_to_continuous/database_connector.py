@@ -373,6 +373,7 @@ class DetectorDBConnection:
             phase=phase,
             det_method_id=det_method_id,
             on_event=on_event,
+            expectedrows=self.channel_info.ndays,
         )
         return storage
 
