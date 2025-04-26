@@ -138,10 +138,13 @@ class DetectorDBConnection:
             with session.begin():
                 # Get the Station object and the Channel objects for the appropriate date
                 _, selected_channels = services.get_operating_channels_by_station_name(
-                    session, self.station_name, self.seed_code, date
+                    session,
+                    self.station_name,
+                    self.seed_code,
+                    date,
+                    net=self.net,
+                    loc=self.loc,
                 )
-
-        self.channel_info = ChannelInfo(selected_channels)
 
     def save_data_info(self, date, metadata_dict, error=None):
         """Add cont data info into the database. If it already exists, checks that the
