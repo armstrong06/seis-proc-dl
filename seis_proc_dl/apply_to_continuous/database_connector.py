@@ -23,11 +23,12 @@ class DailyDetectionDBInfo:
 
 
 class ChannelInfo:
-    def __init__(self, channels):
+    def __init__(self, channels, total_ndays):
         self.ondate = np.min([chan.ondate for chan in channels])
         ends = [chan.offdate for chan in channels]
         self.offdate = None if None in ends else np.max(ends)
         self.channel_ids = self.gather_chan_ids(channels)
+        self.ndays = total_ndays
 
     def gather_chan_ids(self, channels):
         channel_ids = {}
@@ -73,7 +74,7 @@ class DetectorDBConnection:
             with session.begin():
                 # Get all channels for this station name and channel type
                 all_channels = services.get_common_station_channels_by_name(
-                    session,  stat,  seed_code, net=net, loc=loc
+                    session, stat, seed_code, net=net, loc=loc
                 )
 
                 # Get the Station object and the Channel objects for the appropriate date
@@ -97,7 +98,10 @@ class DetectorDBConnection:
             # Store the station
             self.station_id = selected_stat.id
             # Store the current channels
-            self.channel_info = ChannelInfo(selected_channels)
+            total_ndays = services.get_similar_channel_total_ndays(
+                session, net, stat, loc, selected_channels[0].seed_code
+            )
+            self.channel_info = ChannelInfo(selected_channels, total_ndays)
 
         return start_date, end_date
 
@@ -146,6 +150,15 @@ class DetectorDBConnection:
                     loc=self.loc,
                 )
 
+                total_ndays = services.get_similar_channel_total_ndays(
+                    session,
+                    self.net,
+                    self.station_name,
+                    self.loc,
+                    selected_channels[0].seed_code,
+                )
+
+        self.channel_info = ChannelInfo(selected_channels, total_ndays)
     def save_data_info(self, date, metadata_dict, error=None):
         """Add cont data info into the database. If it already exists, checks that the
         information is the same"""
