@@ -127,7 +127,11 @@ class DetectorDBConnection:
         self.daily_info = DailyDetectionDBInfo(date)
         valid_channels = self.validate_channels_for_date(date)
         if not valid_channels:
-            self.update_channels(date)
+            channel_continues = self.update_channels(date)
+
+            if not channel_continues:
+                pass
+                # TODO: Do something here to end because dates are over
 
     def validate_channels_for_date(self, date):
         if date >= self.channel_info.ondate and (
@@ -150,6 +154,9 @@ class DetectorDBConnection:
                     loc=self.loc,
                 )
 
+                if selected_channels is None or len(selected_channels) == 0:
+                    return False
+
                 total_ndays = services.get_similar_channel_total_ndays(
                     session,
                     self.net,
@@ -159,6 +166,8 @@ class DetectorDBConnection:
                 )
 
         self.channel_info = ChannelInfo(selected_channels, total_ndays)
+        return True
+
     def save_data_info(self, date, metadata_dict, error=None):
         """Add cont data info into the database. If it already exists, checks that the
         information is the same"""
