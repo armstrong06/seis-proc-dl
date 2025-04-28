@@ -271,9 +271,20 @@ class TestDetectorDBConnection:
         valid = db_conn.validate_channels_for_date(date)
         assert not valid, "Returned true"
 
-    def test_update_channels(self, db_session_with_3c_stat_loaded):
+    def test_update_channels_invalid(self, db_session_with_3c_stat_loaded):
         session, db_conn, start, end = db_session_with_3c_stat_loaded
         date = datetime.strptime("2013-04-01", dateformat)
+        db_conn.update_channels(date)
+        assert (
+            db_conn.channel_info.ondate is None
+        ), "ondate should not be set, date out of range"
+        assert (
+            db_conn.channel_info.offdate is None
+        ), "offdate should not be set, date out of range"
+
+    def test_update_channels(self, db_session_with_3c_stat_loaded):
+        session, db_conn, start, end = db_session_with_3c_stat_loaded
+        date = datetime.strptime("2011-09-11", dateformat)
         db_conn.update_channels(date)
         assert db_conn.channel_info.ondate == datetime.strptime(
             "2013-04-01T00:00:00.00", datetimeformat
@@ -309,8 +320,19 @@ class TestDetectorDBConnection:
             "2013-04-01T00:00:00.00", datetimeformat
         ), "invalid ondate"
         assert db_conn.channel_info.offdate == datetime.strptime(
-            "2015-08-25T23:59:59.00", datetimeformat
-        ), "invalid ondate"
+            "2013-03-31T23:59:59.00", datetimeformat
+        ), "invalid channel offdate"
+
+    def test_start_new_day_out_of_range(self, db_session_with_3c_stat_loaded):
+        session, db_conn, start, end = db_session_with_3c_stat_loaded
+
+        new_date = datetime.strptime("2013-04-01", dateformat)
+        db_conn.start_new_day(new_date)
+        assert (
+            db_conn.daily_info.date == new_date
+        ), "invalid date in DailyDetectionDBInfo"
+        assert db_conn.channel_info.ondate is None, "invalid ondate"
+        assert db_conn.channel_info.offdate is None, "invalid ondate"
 
     @pytest.fixture
     def db_session_with_saved_contdatainfo(

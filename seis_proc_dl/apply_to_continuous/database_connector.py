@@ -24,11 +24,16 @@ class DailyDetectionDBInfo:
 
 class ChannelInfo:
     def __init__(self, channels, total_ndays):
-        self.ondate = np.min([chan.ondate for chan in channels])
-        ends = [chan.offdate for chan in channels]
-        self.offdate = None if None in ends else np.max(ends)
-        self.channel_ids = self.gather_chan_ids(channels)
+        self.ondate = None
+        self.offdate = None
+        self.channel_ids = None
         self.ndays = total_ndays
+
+        if channels is not None and len(channels) > 0:
+            self.ondate = np.min([chan.ondate for chan in channels])
+            ends = [chan.offdate for chan in channels]
+            self.offdate = None if None in ends else np.max(ends)
+            self.channel_ids = self.gather_chan_ids(channels)
 
     def gather_chan_ids(self, channels):
         channel_ids = {}
@@ -130,8 +135,9 @@ class DetectorDBConnection:
             channel_continues = self.update_channels(date)
 
             if not channel_continues:
-                pass
-                # TODO: Do something here to end because dates are over
+                return False
+
+        return True
 
     def validate_channels_for_date(self, date):
         if date >= self.channel_info.ondate and (
@@ -155,6 +161,7 @@ class DetectorDBConnection:
                 )
 
                 if selected_channels is None or len(selected_channels) == 0:
+                    self.channel_info = ChannelInfo([], 0)
                     return False
 
                 total_ndays = services.get_similar_channel_total_ndays(
@@ -175,7 +182,9 @@ class DetectorDBConnection:
         # For now, I am just going to assume there is one processing method and the
         # results will be the same every time. Hopefully that's fine...
 
-        self.start_new_day(date)
+        started_new_day = self.start_new_day(date)
+        if not started_new_day:
+            raise ValueError(f"Cannot start processing {date}, no channel info exists")
 
         with self.Session() as session:
             with session.begin():
