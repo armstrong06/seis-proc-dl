@@ -57,7 +57,9 @@ class ApplyDetector:
         """
         # Assuming daily files with 100 Hz sampling rate
         self.EXPECTED_SAMPLING_RATE = 100
-        self.EXPECTED_NUMBER_OF_POSTPROB_SAMPLES = 60*60*24*self.EXPECTED_SAMPLING_RATE
+        self.EXPECTED_NUMBER_OF_POSTPROB_SAMPLES = (
+            60 * 60 * 24 * self.EXPECTED_SAMPLING_RATE
+        )
 
         self.p_detector = None
         self.s_detector = None
@@ -245,7 +247,11 @@ class ApplyDetector:
                 ### The data files are organized Y/m/d, get the appropriate date/station files ###
                 date_str = date.strftime("%Y/%m/%d")
                 files = sorted(
-                    glob.glob(os.path.join(self.data_dir, date_str, f"*{net}.{stat}.{loc}.{chan}*"))
+                    glob.glob(
+                        os.path.join(
+                            self.data_dir, date_str, f"*{net}.{stat}.{loc}.{chan}*"
+                        )
+                    )
                 )
 
                 ### Make the output dirs have the same structure as the data dirs ###
@@ -299,7 +305,7 @@ class ApplyDetector:
                         error,
                         p_post_probs,
                         s_post_probs,
-                        debug_N_examples=debug_N_examples
+                        debug_N_examples=debug_N_examples,
                     )
                     logger.debug(
                         f"Total time getting detections and saving info to database: {time.time() - db_start_time:0.2f} s"
@@ -328,15 +334,25 @@ class ApplyDetector:
                 self.db_conn.close_open_pytables()
 
     def save_daily_results_in_db(
-        self, date, cont_data, metadata, gaps, error, p_post_probs, s_post_probs=None, debug_N_examples=-1
+        self,
+        date,
+        cont_data,
+        metadata,
+        gaps,
+        error,
+        p_post_probs,
+        s_post_probs=None,
+        debug_N_examples=-1,
     ):
         expected_array_length = self.EXPECTED_NUMBER_OF_POSTPROB_SAMPLES
         if debug_N_examples > 0:
-            expected_array_length = debug_N_examples*self.sliding_interval
-         
+            expected_array_length = debug_N_examples * self.sliding_interval
+
         if self.dataloader.store_N_seconds > 0:
-            expected_array_length += self.dataloader.store_N_seconds * self.EXPECTED_SAMPLING_RATE
-            
+            expected_array_length += (
+                self.dataloader.store_N_seconds * self.EXPECTED_SAMPLING_RATE
+            )
+
         start_data = time.time()
         # Add row to contdatainfo
         self.db_conn.save_data_info(date, metadata, error=error)
@@ -346,9 +362,9 @@ class ApplyDetector:
             self.db_conn.format_and_save_gaps(
                 self.dataloader.simplify_gaps(gaps), self.min_gap_sep_seconds
             )
-            logger.debug(
-                f"Time to store contdatainfo and gaps: {time.time() - start_data:0.2f} s"
-            )
+        logger.debug(
+            f"Time to store contdatainfo and gaps: {time.time() - start_data:0.2f} s"
+        )
 
         # P post probs may not exist if there was an error in loading
         if p_post_probs is not None:
@@ -356,7 +372,9 @@ class ApplyDetector:
             # Only save post prob info in db if using pytables
             if self.use_pytables:
                 self.db_conn.save_P_post_probs(
-                    p_post_probs, expected_array_length=expected_array_length, on_event=logger.info
+                    p_post_probs,
+                    expected_array_length=expected_array_length,
+                    on_event=logger.info,
                 )
             # Save P Detections
             self.db_conn.save_detections(
@@ -381,7 +399,7 @@ class ApplyDetector:
                 wf_proc_notes=self.wf_proc_notes,
                 seconds_around_pick=self.wf_seconds_around_pick,
                 use_pytables=self.use_pytables,
-                on_event=logger.info
+                on_event=logger.info,
             )
             logger.debug(
                 f"Time to store P - picks and waveforms: {time.time() - start_picks:0.2f} s"
@@ -393,7 +411,9 @@ class ApplyDetector:
             # Only save post prob info in db if using pytables
             if self.use_pytables:
                 self.db_conn.save_S_post_probs(
-                    s_post_probs, expected_array_length=expected_array_length, on_event=logger.debug
+                    s_post_probs,
+                    expected_array_length=expected_array_length,
+                    on_event=logger.debug,
                 )
             self.db_conn.save_detections(
                 self.get_detections_from_post_probs(
@@ -417,7 +437,7 @@ class ApplyDetector:
                 wf_proc_notes=self.wf_proc_notes,
                 seconds_around_pick=self.wf_seconds_around_pick,
                 use_pytables=self.use_pytables,
-                on_event=logger.debug
+                on_event=logger.debug,
             )
             logger.debug(
                 f"Time to store S - picks and waveforms: {time.time() - start_picks:0.2f} s"
@@ -442,7 +462,7 @@ class ApplyDetector:
         if outdir is None:
             outdir = self.outdir
 
-        meta_outfile_name = None    
+        meta_outfile_name = None
         if self.db_conn is None or not self.use_pytables:
             meta_outfile_name = self.dataloader.make_outfile_name(files[0], outdir)
         p_post_probs, s_post_probs = None, None
