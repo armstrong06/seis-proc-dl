@@ -43,6 +43,9 @@ class ChannelInfo:
 
 
 class DetectorDBConnection:
+    EXPECTED_DAILY_P_PICKS = 500
+    EXPECTED_DAILY_S_PICKS = 500
+
     def __init__(self, ncomps, session_factory=None):
         self.Session = session_factory or database.Session
         self.ncomps = ncomps
@@ -427,6 +430,11 @@ class DetectorDBConnection:
                     filt_high=common_wf_details["wf_filt_high"],
                     proc_notes=common_wf_details["wf_proc_notes"],
                     on_event=common_wf_details["on_event"],
+                    expectedrows=(
+                        self.EXPECTED_DAILY_P_PICKS * self.channel_info.ndays
+                        if is_p
+                        else self.EXPECTED_DAILY_S_PICKS * self.channel_info.ndays
+                    ),
                 )
 
             if is_p:
