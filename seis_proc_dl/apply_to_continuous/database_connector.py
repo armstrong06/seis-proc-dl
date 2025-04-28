@@ -84,24 +84,24 @@ class DetectorDBConnection:
                     )
                 )
 
-        # Set the start date to the minimum date for all channels of the desired type
-        start_date = np.min([chan.ondate for chan in all_channels])
-        # Set the end date to the maximum date for all channels of the desired type
-        ends = [chan.offdate for chan in all_channels]
-        end_date = None if None in ends else np.max(ends)
+                # Set the start date to the minimum date for all channels of the desired type
+                start_date = np.min([chan.ondate for chan in all_channels])
+                # Set the end date to the maximum date for all channels of the desired type
+                ends = [chan.offdate for chan in all_channels]
+                end_date = None if None in ends else np.max(ends)
 
-        if selected_stat is not None:
-            # If there is a selected stat,
-            assert (
-                len(selected_channels) == self.ncomps
-            ), f"Number of channels selected ({len(selected_channels)}) does not agree with the number of components ({self.ncomps})"
-            # Store the station
-            self.station_id = selected_stat.id
-            # Store the current channels
-            total_ndays = services.get_similar_channel_total_ndays(
-                session, net, stat, loc, selected_channels[0].seed_code
-            )
-            self.channel_info = ChannelInfo(selected_channels, total_ndays)
+                if selected_stat is not None:
+                    # If there is a selected stat,
+                    assert (
+                        len(selected_channels) == self.ncomps
+                    ), f"Number of channels selected ({len(selected_channels)}) does not agree with the number of components ({self.ncomps})"
+                    # Store the station
+                    self.station_id = selected_stat.id
+                    # Store the current channels
+                    total_ndays = services.get_similar_channel_total_ndays(
+                        session, net, stat, loc, selected_channels[0].seed_code
+                    )
+                    self.channel_info = ChannelInfo(selected_channels, total_ndays)
 
         return start_date, end_date
 
