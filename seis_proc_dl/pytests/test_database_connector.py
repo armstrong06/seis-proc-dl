@@ -65,17 +65,17 @@ def db_session(monkeypatch):
 
 @pytest.fixture
 def contdatainfo_ex():
-    new_date = datetime.strptime("2013-03-31", dateformat)
+    new_date = datetime.strptime("2011-09-10", dateformat)
     metadata_dict = {
         "sampling_rate": 100.0,
         "dt": 0.01,
         "original_npts": 8280000,
         "original_starttime": datetime.strptime(
-            "2013-03-31T01:00:00.00", datetimeformat
+            "2011-09-10T01:00:00.00", datetimeformat
         ),
-        "original_endtime": datetime.strptime("2013-03-31T23:59:59.59", datetimeformat),
+        "original_endtime": datetime.strptime("2011-09-10T23:59:59.59", datetimeformat),
         "npts": 8640000,
-        "starttime": datetime.strptime("2013-03-31T00:00:00.00", datetimeformat),
+        "starttime": datetime.strptime("2011-09-10T00:00:00.00", datetimeformat),
         "previous_appended": False,
     }
     return new_date, deepcopy(metadata_dict)
@@ -85,20 +85,20 @@ def contdatainfo_ex():
 def simple_gaps_ex():
     gap1 = [
         "HHE",
-        datetime.strptime("2013-03-31T01:00:00.00", datetimeformat),
-        datetime.strptime("2013-03-31T02:00:00.00", datetimeformat),
+        datetime.strptime("2011-09-10T01:00:00.00", datetimeformat),
+        datetime.strptime("2011-09-10T02:00:00.00", datetimeformat),
     ]
 
     gap2 = [
         "HHE",
-        datetime.strptime("2013-03-31T03:00:00.00", datetimeformat),
-        datetime.strptime("2013-03-31T04:00:00.00", datetimeformat),
+        datetime.strptime("2011-09-10T03:00:00.00", datetimeformat),
+        datetime.strptime("2011-09-10T04:00:00.00", datetimeformat),
     ]
 
     gap3 = [
         "HHE",
-        datetime.strptime("2013-03-31T05:00:00.00", datetimeformat),
-        datetime.strptime("2013-03-31T06:00:00.00", datetimeformat),
+        datetime.strptime("2011-09-10T05:00:00.00", datetimeformat),
+        datetime.strptime("2011-09-10T06:00:00.00", datetimeformat),
     ]
 
     return deepcopy([gap1, gap2, gap3])
@@ -111,8 +111,8 @@ def close_gaps_ex():
         # "Stat",
         # "",
         "HHZ",
-        datetime.strptime("2013-03-31T01:00:00.00", datetimeformat),
-        datetime.strptime("2013-03-31T02:00:00.00", datetimeformat),
+        datetime.strptime("2011-09-10T01:00:00.00", datetimeformat),
+        datetime.strptime("2011-09-10T02:00:00.00", datetimeformat),
         # 777,
         # 777,
     ]
@@ -120,22 +120,22 @@ def close_gaps_ex():
     # 1 second between gap1 and gap2
     gap2 = [
         "HHZ",
-        datetime.strptime("2013-03-31T02:00:01.00", datetimeformat),
-        datetime.strptime("2013-03-31T02:00:11.00", datetimeformat),
+        datetime.strptime("2011-09-10T02:00:01.00", datetimeformat),
+        datetime.strptime("2011-09-10T02:00:11.00", datetimeformat),
     ]
 
     # 1 second between gap2 and gap3
     gap3 = [
         "HHZ",
-        datetime.strptime("2013-03-31T02:00:12.00", datetimeformat),
-        datetime.strptime("2013-03-31T02:00:22.00", datetimeformat),
+        datetime.strptime("2011-09-10T02:00:12.00", datetimeformat),
+        datetime.strptime("2011-09-10T02:00:22.00", datetimeformat),
     ]
 
     # 5.0 seconds between gap3 and gap4
     gap4 = [
         "HHZ",
-        datetime.strptime("2013-03-31T02:00:27.00", datetimeformat),
-        datetime.strptime("2013-03-31T02:00:37.00", datetimeformat),
+        datetime.strptime("2011-09-10T02:00:27.00", datetimeformat),
+        datetime.strptime("2011-09-10T02:00:37.00", datetimeformat),
     ]
 
     return deepcopy([gap1, gap2, gap3, gap4])
@@ -159,7 +159,11 @@ class TestDetectorDBConnection:
 
         patch_session(db_conn)  # Patch `self.Session` on the instance
         start, end = db_conn.get_channel_dates(
-            datetime.strptime("2012-10-10T00:00:00.00", datetimeformat), "WY", "YNR", "", "HH",
+            datetime.strptime("2011-09-10T00:00:00.00", datetimeformat),
+            "WY",
+            "YNR",
+            "",
+            "HH",
         )
 
         return session, db_conn, start, end
@@ -177,10 +181,10 @@ class TestDetectorDBConnection:
             len(db_conn.channel_info.channel_ids.keys()) == 3
         ), "invalid number of channels"
         assert db_conn.channel_info.ondate == datetime.strptime(
-            "2011-09-11T00:00:00.00", datetimeformat
+            "2010-08-21T00:00:00.00", datetimeformat
         ), "invalid channel ondate"
         assert db_conn.channel_info.offdate == datetime.strptime(
-            "2013-03-31T23:59:59.00", datetimeformat
+            "2011-09-10T23:59:59.00", datetimeformat
         ), "invalid channel offdate"
 
     def test_get_channel_dates_YMV(self, db_session):
@@ -188,7 +192,9 @@ class TestDetectorDBConnection:
         db_conn = DetectorDBConnection(3)  # Create instance
 
         patch_session(db_conn)  # Patch `self.Session` on the instance
-        start, end = db_conn.get_channel_dates(datetime(2023, 1, 1), "WY", "YMV", "01", "HH")
+        start, end = db_conn.get_channel_dates(
+            datetime(2023, 1, 1), "WY", "YMV", "01", "HH"
+        )
 
         assert start == datetime(2023, 8, 10, 0, 0, 0), "invalid start date"
         assert end is None, "invalid end date"
@@ -198,7 +204,9 @@ class TestDetectorDBConnection:
         db_conn = DetectorDBConnection(3)  # Create instance
 
         patch_session(db_conn)  # Patch `self.Session` on the instance
-        start, end = db_conn.get_channel_dates(datetime(2023, 1, 1), "WY", "YJC", "01", "HH")
+        start, end = db_conn.get_channel_dates(
+            datetime(2023, 1, 1), "WY", "YJC", "01", "HH"
+        )
 
         assert start == datetime(2023, 8, 8, 14, 0, 0), "invalid start date"
         assert end is None, "invalid end date"
@@ -209,7 +217,11 @@ class TestDetectorDBConnection:
         patch_session(db_conn)  # Patch `self.Session` on the instance
 
         start, end = db_conn.get_channel_dates(
-            datetime.strptime("2012-10-10T00:00:00.00", datetimeformat), "MB", "QLMT", "", "EHZ"
+            datetime.strptime("2012-10-10T00:00:00.00", datetimeformat),
+            "MB",
+            "QLMT",
+            "",
+            "EHZ",
         )
         assert start == datetime.strptime(
             "2001-06-09T00:00:00.00", datetimeformat
@@ -261,13 +273,13 @@ class TestDetectorDBConnection:
 
     def test_validate_channels_for_date_valid(self, db_session_with_3c_stat_loaded):
         session, db_conn, start, end = db_session_with_3c_stat_loaded
-        date = datetime.strptime("2013-03-31", dateformat)
+        date = datetime.strptime("2011-09-10", dateformat)
         valid = db_conn.validate_channels_for_date(date)
         assert valid, "Returned false"
 
     def test_validate_channels_for_date_invalid(self, db_session_with_3c_stat_loaded):
         session, db_conn, start, end = db_session_with_3c_stat_loaded
-        date = datetime.strptime("2013-04-01", dateformat)
+        date = datetime.strptime("2011-09-11", dateformat)
         valid = db_conn.validate_channels_for_date(date)
         assert not valid, "Returned true"
 
@@ -287,16 +299,31 @@ class TestDetectorDBConnection:
         date = datetime.strptime("2011-09-11", dateformat)
         db_conn.update_channels(date)
         assert db_conn.channel_info.ondate == datetime.strptime(
-            "2013-04-01T00:00:00.00", datetimeformat
+            "2011-09-11T00:00:00.00", datetimeformat
         ), "invalid ondate"
         assert db_conn.channel_info.offdate == datetime.strptime(
-            "2015-08-25T23:59:59.00", datetimeformat
+            "2013-03-31T23:59:59.00", datetimeformat
         ), "invalid ondate"
 
     def test_start_new_day_valid_date(self, db_session_with_3c_stat_loaded):
         session, db_conn, start, end = db_session_with_3c_stat_loaded
 
-        new_date = datetime.strptime("2013-03-31", dateformat)
+        new_date = datetime.strptime("2011-09-10", dateformat)
+        db_conn.start_new_day(new_date)
+        assert (
+            db_conn.daily_info.date == new_date
+        ), "invalid date in DailyDetectionDBInfo"
+        assert db_conn.channel_info.ondate == datetime.strptime(
+            "2010-08-21T00:00:00.00", datetimeformat
+        ), "invalid channel ondate"
+        assert db_conn.channel_info.offdate == datetime.strptime(
+            "2011-09-10T23:59:59.00", datetimeformat
+        ), "invalid channel offdate"
+
+    def test_start_new_day_invalid_date(self, db_session_with_3c_stat_loaded):
+        session, db_conn, start, end = db_session_with_3c_stat_loaded
+
+        new_date = datetime.strptime("2011-09-11", dateformat)
         db_conn.start_new_day(new_date)
         assert (
             db_conn.daily_info.date == new_date
@@ -304,21 +331,6 @@ class TestDetectorDBConnection:
         assert db_conn.channel_info.ondate == datetime.strptime(
             "2011-09-11T00:00:00.00", datetimeformat
         ), "invalid channel ondate"
-        assert db_conn.channel_info.offdate == datetime.strptime(
-            "2013-03-31T23:59:59.00", datetimeformat
-        ), "invalid channel offdate"
-
-    def test_start_new_day_invalid_date(self, db_session_with_3c_stat_loaded):
-        session, db_conn, start, end = db_session_with_3c_stat_loaded
-
-        new_date = datetime.strptime("2013-04-01", dateformat)
-        db_conn.start_new_day(new_date)
-        assert (
-            db_conn.daily_info.date == new_date
-        ), "invalid date in DailyDetectionDBInfo"
-        assert db_conn.channel_info.ondate == datetime.strptime(
-            "2013-04-01T00:00:00.00", datetimeformat
-        ), "invalid ondate"
         assert db_conn.channel_info.offdate == datetime.strptime(
             "2013-03-31T23:59:59.00", datetimeformat
         ), "invalid channel offdate"
@@ -358,12 +370,12 @@ class TestDetectorDBConnection:
         assert contdatainfo.chan_pref == "HH", "invalid chan_pref"
         assert contdatainfo.date == new_date.date(), "contdatainfo date incorrect"
         assert contdatainfo.proc_start == datetime.strptime(
-            "2013-03-31T00:00:00.00", datetimeformat
+            "2011-09-10T00:00:00.00", datetimeformat
         ), "invalid proc_start"
 
     def test_save_data_info_error(self, db_session_with_3c_stat_loaded):
         session, db_conn, start, end = db_session_with_3c_stat_loaded
-        new_date = datetime.strptime("2013-03-31", dateformat)
+        new_date = datetime.strptime("2011-09-10", dateformat)
         metadata_dict = None
         error = "no_data"
         db_conn.save_data_info(new_date, metadata_dict, error=error)
@@ -401,7 +413,7 @@ class TestDetectorDBConnection:
         assert contdatainfo.chan_pref == "HH", "invalid chan_pref"
         assert contdatainfo.date == new_date.date(), "contdatainfo date incorrect"
         assert contdatainfo.orig_start == datetime.strptime(
-            "2013-03-31T01:00:00.00", datetimeformat
+            "2011-09-10T01:00:00.00", datetimeformat
         ), "invalid orig_start"
         assert contdatainfo.proc_start is None, "invalid proc_start"
         assert contdatainfo.proc_npts is None, "invalid proc_npts"
@@ -455,10 +467,10 @@ class TestDetectorDBConnection:
         assert formatted["data_id"] == 1
         assert formatted["chan_id"] == 2
         assert formatted["start"] == datetime.strptime(
-            "2013-03-31T01:00:00.00", datetimeformat
+            "2011-09-10T01:00:00.00", datetimeformat
         )
         assert formatted["end"] == datetime.strptime(
-            "2013-03-31T02:00:00.00", datetimeformat
+            "2011-09-10T02:00:00.00", datetimeformat
         )
         assert formatted["avail_sig_sec"] == 0.0
 
@@ -502,10 +514,10 @@ class TestDetectorDBConnection:
             formatted[1]["avail_sig_sec"] == 0.0
         ), "incorrect avail_sig_sec for single gap"
         assert formatted[0]["start"] == datetime.strptime(
-            "2013-03-31T01:00:00.00", datetimeformat
+            "2011-09-10T01:00:00.00", datetimeformat
         ), "incorrect start for merged gap"
         assert formatted[0]["end"] == datetime.strptime(
-            "2013-03-31T02:00:22.00", datetimeformat
+            "2011-09-10T02:00:22.00", datetimeformat
         ), "incorrect end for merged gap"
 
     def test_format_and_save_gaps(
@@ -885,7 +897,6 @@ class TestDetectorDBConnection:
             seconds=10 + 0.01
         ), "invalid end for wf[2]"
 
-
     @pytest.fixture
     def db_session_with_S_dldets(
         self, db_session_with_saved_contdatainfo, detections_ex
@@ -901,7 +912,7 @@ class TestDetectorDBConnection:
         db_conn.save_detections(det_list)
 
         return session, db_conn
-    
+
     @pytest.fixture
     def db_session_with_S_picks_and_wfs(
         self, db_session_with_S_dldets, contdatainfo_ex
@@ -1409,7 +1420,7 @@ class TestDetectorDBConnection:
         }
 
         return session, db_conn, params
-    
+
     def test_save_picks_from_detections_pytables_S(
         self, db_session_with_S_picks_and_wfs_pytables
     ):
@@ -1826,8 +1837,8 @@ def simple_obspy_gaps_ex():
         "Stat",
         "",
         "HHZ",
-        UTC("2013-03-31T01:00:00.00"),
-        UTC("2013-03-31T02:00:00.00"),
+        UTC("2011-09-10T01:00:00.00"),
+        UTC("2011-09-10T02:00:00.00"),
         777,
         777,
     ]
@@ -1837,8 +1848,8 @@ def simple_obspy_gaps_ex():
         "Stat",
         "",
         "HHZ",
-        UTC("2013-03-31T03:00:00.00"),
-        UTC("2013-03-31T04:00:00.00"),
+        UTC("2011-09-10T03:00:00.00"),
+        UTC("2011-09-10T04:00:00.00"),
         777,
         777,
     ]
@@ -1848,8 +1859,8 @@ def simple_obspy_gaps_ex():
         "Stat",
         "",
         "HHZ",
-        UTC("2013-03-31T05:00:00.00"),
-        UTC("2013-03-31T06:00:00.00"),
+        UTC("2011-09-10T05:00:00.00"),
+        UTC("2011-09-10T06:00:00.00"),
         777,
         777,
     ]
@@ -1941,7 +1952,7 @@ class TestApplyDetectorDB:
         assert contdatainfo.chan_pref == "HHZ", "invalid chan_pref"
         assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
         assert contdatainfo.proc_start == datetime.strptime(
-            "2013-03-31T00:00:00.00", datetimeformat
+            "2011-09-10T00:00:00.00", datetimeformat
         ), "invalid proc_start"
 
         # check the gaps
@@ -2027,7 +2038,7 @@ class TestApplyDetectorDB:
         assert contdatainfo.chan_pref == "HH", "invalid chan_pref"
         assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
         assert contdatainfo.proc_start == datetime.strptime(
-            "2013-03-31T00:00:00.00", datetimeformat
+            "2011-09-10T00:00:00.00", datetimeformat
         ), "invalid proc_start"
 
         # check the gaps
@@ -2241,7 +2252,7 @@ class TestApplyDetectorDBPytables:
             assert contdatainfo.chan_pref == "HHZ", "invalid chan_pref"
             assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
             assert contdatainfo.proc_start == datetime.strptime(
-                "2013-03-31T00:00:00.00", datetimeformat
+                "2011-09-10T00:00:00.00", datetimeformat
             ), "invalid proc_start"
 
             # check the gaps
@@ -2291,9 +2302,11 @@ class TestApplyDetectorDBPytables:
                 ), "no waveform data found for corresponding wf_info.id"
         finally:
             applier.db_conn.close_open_pytables()
-            os.remove(applier.db_conn.detout_storage_P.file_path)
-            for cid, cstore in applier.db_conn.waveform_storage_dict_P.items():
-                os.remove(cstore.file_path)
+            if applier.db_conn.detout_storage_P is not None:
+                os.remove(applier.db_conn.detout_storage_P.file_path)
+            if applier.db_conn.waveform_storage_dict_P is not None:
+                for cid, cstore in applier.db_conn.waveform_storage_dict_P.items():
+                    os.remove(cstore.file_path)
 
     def test_save_daily_results_in_db_3C(
         self, db_session, contdatainfo_ex, simple_obspy_gaps_ex, mock_pytables_config
@@ -2343,7 +2356,7 @@ class TestApplyDetectorDBPytables:
             assert contdatainfo.chan_pref == "HH", "invalid chan_pref"
             assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
             assert contdatainfo.proc_start == datetime.strptime(
-                "2013-03-31T00:00:00.00", datetimeformat
+                "2011-09-10T00:00:00.00", datetimeformat
             ), "invalid proc_start"
 
             # check the gaps
