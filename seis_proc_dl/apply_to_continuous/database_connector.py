@@ -43,8 +43,8 @@ class ChannelInfo:
 
 
 class DetectorDBConnection:
-    EXPECTED_DAILY_P_PICKS = 500
-    EXPECTED_DAILY_S_PICKS = 500
+    EXPECTED_DAILY_P_PICKS = 1000
+    EXPECTED_DAILY_S_PICKS = 1000
 
     def __init__(self, ncomps, session_factory=None):
         self.Session = session_factory or database.Session
