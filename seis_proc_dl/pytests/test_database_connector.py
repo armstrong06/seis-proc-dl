@@ -1818,9 +1818,11 @@ apply_detector_config = {
         "det_method_1c_P": {"name": "TEST_1C_P_UNET", "desc": "test for 1C P dets"},
         "det_method_3c_P": {"name": "TEST_3C_P_UNET", "desc": "test for 3C P dets"},
         "det_method_3c_S": {"name": "TEST_3C_S_UNET", "desc": "test for 3C S dets"},
-        "p_det_thresh": 50,
+        "p_det_thresh_3c": 50,
+        "p_det_thresh_1c": 55,
         "s_det_thresh": 50,
-        "p_pick_thresh": 75,
+        "p_pick_thresh_3c": 75,
+        "p_pick_thresh_1c": 80,
         "s_pick_thresh": 75,
         "wf_seconds_around_pick": 10,
         "pick_author": "SPDL",
@@ -1903,9 +1905,9 @@ class TestApplyDetectorDB:
         assert (
             applier.db_conn.s_detection_method_id is None
         ), "s detection method should not set"
-        assert applier.p_det_thresh == 50
+        assert applier.p_det_thresh == 55
         assert applier.s_det_thresh is None
-        assert applier.p_pick_thresh == 75
+        assert applier.p_pick_thresh == 80
         assert applier.s_pick_thresh is None
         assert applier.wf_seconds_around_pick == 10.0
         assert applier.db_pick_author == "SPDL"
@@ -1926,9 +1928,9 @@ class TestApplyDetectorDB:
         continuous_data = np.zeros((metadata["npts"], 1))
         p_post_probs = np.zeros(metadata["npts"])
         p_post_probs[10000] = 90
-        p_post_probs[25000] = 80
-        p_post_probs[40000] = 75
-        p_post_probs[56000] = 50
+        p_post_probs[25000] = 85
+        p_post_probs[40000] = 80
+        p_post_probs[56000] = 56
         p_post_probs[75000] = 45
 
         applier.db_conn.get_channel_dates(date, "WY", "YNR", "", "HHZ")
@@ -2226,9 +2228,9 @@ class TestApplyDetectorDBPytables:
         continuous_data = np.zeros((metadata["npts"], 1))
         p_post_probs = np.zeros(metadata["npts"])
         p_post_probs[10000] = 90
-        p_post_probs[25000] = 80
-        p_post_probs[40000] = 75
-        p_post_probs[56000] = 50
+        p_post_probs[25000] = 85
+        p_post_probs[40000] = 80
+        p_post_probs[56000] = 56
         p_post_probs[75000] = 45
 
         applier.db_conn.get_channel_dates(date, "WY", "YNR", "", "HHZ")

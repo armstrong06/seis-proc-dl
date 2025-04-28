@@ -104,15 +104,17 @@ class ApplyDetector:
         if config.database is not None:
             self.db_conn = DetectorDBConnection(ncomps, session_factory=session_factory)
             self.use_pytables = config.database.use_pytables
-            self.p_det_thresh = config.database.p_det_thresh
-            self.p_pick_thresh = config.database.p_pick_thresh
             self.wf_seconds_around_pick = config.database.wf_seconds_around_pick
             self.db_pick_author = config.database.pick_author
-            self.wf_proc_notes = "From Dataloader.continuous_data"
             self.min_gap_sep_seconds = config.database.min_gap_separation_seconds
+            self.wf_proc_notes = "From Dataloader.continuous_data"
+            self.p_det_thresh = None
+            self.p_pick_thresh = None
             self.s_det_thresh = None
             self.s_pick_thresh = None
             if ncomps == 1:
+                self.p_det_thresh = config.database.p_det_thresh_1c
+                self.p_pick_thresh = config.database.p_pick_thresh_1c
                 self.db_conn.add_detection_method(
                     config.database.det_method_1c_P.name,
                     desc=config.database.det_method_1c_P.desc,
@@ -120,6 +122,10 @@ class ApplyDetector:
                     phase="P",
                 )
             elif ncomps == 3:
+                self.p_det_thresh = config.database.p_det_thresh_3c
+                self.p_pick_thresh = config.database.p_pick_thresh_3c
+                self.s_det_thresh = config.database.s_det_thresh
+                self.s_pick_thresh = config.database.s_pick_thresh
                 self.db_conn.add_detection_method(
                     config.database.det_method_3c_P.name,
                     desc=config.database.det_method_3c_P.desc,
@@ -132,8 +138,6 @@ class ApplyDetector:
                     path=config.paths.three_comp_s_model,
                     phase="S",
                 )
-                self.s_det_thresh = config.database.s_det_thresh
-                self.s_pick_thresh = config.database.s_pick_thresh
 
     def __init_1c(self):
         """Initialize the phase detector for 1 component P picker"""
@@ -201,7 +205,7 @@ class ApplyDetector:
             all inputs if -1. Defaults to -1.
         """
 
-        assert year >= 2002 and year <= 2023, "Year is invalid"
+        assert year >= 2002 and year <= 2024, "Year is invalid"
         assert month > 0 and month < 13, "Month is invalid"
         assert day > 0 and day <= 31, "Day is invalid"
         assert n_days > 0, "Number of days is invalid"
