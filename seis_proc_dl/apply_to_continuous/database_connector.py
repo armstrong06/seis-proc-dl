@@ -245,7 +245,7 @@ class DetectorDBConnection:
                             f"DailyContDataInfo {info_str} row already exists but the values have changed"
                         )
 
-        self.daily_info.contdatainfo_id = contdatainfo.id
+            self.daily_info.contdatainfo_id = contdatainfo.id
 
     def format_and_save_gaps(self, gaps, min_gap_sep_seconds):
         """Add gaps into the table. If many gaps in the same time period, combine them
