@@ -10,6 +10,12 @@ out.*
 # Benchmark info
 /seis_proc_dl/apply_to_continuous/benchmark
 
+# Testing
+/seis_proc_dl/pytests/pytables_outputs
+
+#unnecessary
+seis_proc_dl/apply_to_continuous/old
+
 # Created by .ignore support plugin (hsz.mobi)
 ### Python template
 # Byte-compiled / optimized / DLL files
