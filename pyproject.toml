@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seis-proc-dl"
+dynamic = ["version"]
+# seis-proc-db requires sqlalchemy>=2.0 but obspy 1.4.1 requires sqlalchemy<2.0.
+# They seem to have updated this requirement on github though.
+dependencies = [
+    "obspy @ git+https://github.com/obspy/obspy.git",
+    "openvino~=2024.1.0", # I should update this but 2025.1.0 breaks my code
+    "torch~=2.6.0+cu126", # --index-url https://download.pytorch.org/whl/nightly/cu126
+    "torchaudio~=2.6.0+cu126",
+    "torchvision~=0.21.0+cu126",
+    "seis-proc-db @ git+https://github.com/armstrong06/seis-proc-db.git",
+    "h5py~3.13" # needed to pip install --no-cache-dir
+]
+
+requires-python = ">= 3.11"
+authors = [
+    {name="Alysha Armstrong", email="aa.armstrong6@gmail.com"}
+]
+description = "Code for training machine learning models and applying them to continuous data to produce an enhanced Yellowstone earthquake catalog"
+readme = "README.md"
+
+[project.optional-dependencies]
+test = [
+    "pytest~=8.3.5", 
+]
+
+[tool.pytest.ini_options]
+minversion = "8.3.5"
+addopts = "-ra -q"
+testpaths = [
+    "seis_proc_dl/pytests",
+]
