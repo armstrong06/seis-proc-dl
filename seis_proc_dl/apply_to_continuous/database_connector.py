@@ -60,6 +60,7 @@ class DetectorDBConnection:
         self.p_detection_method_id = None
         self.s_detection_method_id = None
         self.daily_info = None
+        self.wf_source_id = None
 
         # BasePyTables storage
         # Wavefroms will need a storage for each channel - keep them in dicts
@@ -112,6 +113,15 @@ class DetectorDBConnection:
                     self.channel_info = ChannelInfo(selected_channels, total_ndays)
 
         return start_date, end_date
+
+    def add_waveform_source(self, name, desc, path=None):
+        """Add a waveform source to the database. If it already exists, update it."""
+        with self.Session() as session:
+            with session.begin():
+                services.upsert_waveform_source(
+                    session, name, details=desc, path=path
+                )
+                self.wf_source_id = services.get_waveform_source(session, name).id
 
     def add_detection_method(self, name, desc, path, phase):
         """Add a detection method to the database. If it already exists, update it."""
@@ -661,6 +671,7 @@ class DetectorDBConnection:
                     data_id=common_wf_details["data_id"],
                     chan_id=chan_id,
                     pick_id=pick.id,
+                    wf_source_id=self.wf_source_id,
                     start=pick_wf_details["wf_start"],
                     end=pick_wf_details["wf_end"],
                     filt_low=common_wf_details["wf_filt_low"],
@@ -714,7 +725,7 @@ class DetectorDBConnection:
             ## This will get waveform info instead of waveform, but they can be treated similarly
             ## Just the data will need to also be grabbed from a pytable.
             close_wfs = services.get_waveform_infos(
-                session, pick.id, data_id=prev_data_id
+                session, pick.id, data_id=prev_data_id, wf_source_id=self.wf_source_id
             )
             prev_inserted_npts = close_wfs[0].duration_samples
         ##

@@ -244,10 +244,21 @@ class TestDetectorDBConnection:
         # Unpack session & patch function
         session, db_conn, _, _ = db_session_with_3c_stat_loaded
 
+        db_conn.add_waveform_source("TEST-extracted", "Extracted from DataLoader.continuous_data")
         db_conn.add_detection_method("TEST-P", "test method", "data/path/P", "P")
         db_conn.add_detection_method("TEST-S", "test method", "data/path/S", "S")
 
         return session, db_conn
+
+    def test_add_waveform_source(self, db_session_with_detection_methods):
+        session, db_conn = db_session_with_detection_methods
+
+        assert (
+            db_conn.wf_source_id is not None
+        ), "wf_source_id is not set"
+        wf_source= session.get(tables.WaveformSource, db_conn.wf_source_id)
+        assert wf_source is not None, "No waveform source returned"
+        assert wf_source.name == "TEST-extracted", "invalid name"
 
     def test_add_detection_method_P(self, db_session_with_detection_methods):
         session, db_conn = db_session_with_detection_methods
