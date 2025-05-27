@@ -51,7 +51,7 @@ def test_load_swag_ensemble():
     model1 = "pPicker_swag60_seed1.pt"
     model2 = "pPicker_swag60_seed2.pt"
     model3 = "pPicker_swag60_seed3.pt"
-    ensemble = sp.load_swag_ensemble(path, model1, model2, model3, [1, 2, 3], True, 20)
+    ensemble = sp.load_swag_ensemble(model1, model2, model3, [1, 2, 3], True, 20, swag_model_dir=path)
     assert ensemble[0].seed == 1
     assert ensemble[1].seed == 2
     assert ensemble[2].seed == 3
@@ -72,7 +72,7 @@ def test_get_calibrated_pick_bounds():
     sp = apply_swag_pickers.MultiSWAGPicker(is_p_picker=True, device='cpu')
     path = "/uufs/chpc.utah.edu/common/home/koper-group3/alysha/selected_models"
     file = f"{path}/p_calibration_model_medians_ensemble_IFtrimmed_sklearn1.3.1.joblib"
-    lb, ub = sp.get_calibrated_pick_bounds(file, 0.05, 0.95)
+    lb, ub = sp.get_calibrated_pick_bounds(0.05, 0.95, cal_model_file=file)
     assert lb < 0.05 and lb > 0.0
     assert ub > 0.95 and ub < 1.0
 
@@ -106,7 +106,7 @@ def test_calibrate_swag_predictions():
     sp = apply_swag_pickers.MultiSWAGPicker(is_p_picker=True, device='cpu')
     path = "/uufs/chpc.utah.edu/common/home/koper-group3/alysha/selected_models"
     file = f"{path}/p_calibration_model_medians_ensemble_IFtrimmed_sklearn1.3.1.joblib"
-    lb_trans, ub_trans = sp.get_calibrated_pick_bounds(file, 0.05, 0.95)
+    lb_trans, ub_trans = sp.get_calibrated_pick_bounds(0.05, 0.95, cal_model_file=file)
     summary = sp.calibrate_swag_predictions([0], [1], lb_trans, ub_trans)
     assert summary['arrivalTimeShift'][0] == 0
     assert summary['arrivalTimeShiftSTD'][0] == 1
@@ -117,7 +117,7 @@ def test_calibrate_swag_predictions_small():
     sp = apply_swag_pickers.MultiSWAGPicker(is_p_picker=True, device='cpu')
     path = "/uufs/chpc.utah.edu/common/home/koper-group3/alysha/selected_models"
     file = f"{path}/p_calibration_model_medians_ensemble_IFtrimmed_sklearn1.3.1.joblib"
-    lb_trans, ub_trans = sp.get_calibrated_pick_bounds(file, 0.05, 0.95)
+    lb_trans, ub_trans = sp.get_calibrated_pick_bounds(0.05, 0.95, cal_model_file=file)
     summary = sp.calibrate_swag_predictions([0, 0], [1, 0.1], lb_trans, ub_trans)
     assert summary['arrivalTimeShift'][1] == 0
     assert summary['arrivalTimeShiftSTD'][1] == 0.1

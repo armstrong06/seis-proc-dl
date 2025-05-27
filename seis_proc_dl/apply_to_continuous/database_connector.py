@@ -1,8 +1,10 @@
 import sys
 import obspy
 import numpy as np
+import os
 from copy import deepcopy
 from datetime import timedelta
+from tables import open_file
 from seis_proc_db import database
 from seis_proc_db import services
 from seis_proc_db import pytables_backend
@@ -118,9 +120,7 @@ class DetectorDBConnection:
         """Add a waveform source to the database. If it already exists, update it."""
         with self.Session() as session:
             with session.begin():
-                services.upsert_waveform_source(
-                    session, name, details=desc, path=path
-                )
+                services.upsert_waveform_source(session, name, details=desc, path=path)
                 self.wf_source_id = services.get_waveform_source(session, name).id
 
     def add_detection_method(self, name, desc, path, phase):
@@ -635,7 +635,7 @@ class DetectorDBConnection:
             chan_id = self.channel_info.channel_ids[seed_code]
 
             # Get the appropriate channel index of the data
-            chan_ind = self.get_channel_data_index(self.ncomps, seed_code)
+            chan_ind = get_channel_data_index(self.ncomps, seed_code)
 
             # Get just the channel of interest
             wf_data = pick_cont_data[:, chan_ind]
@@ -742,7 +742,7 @@ class DetectorDBConnection:
         for wf in close_wfs:
             seed_code = session.get(Channel, wf.chan_id).seed_code
             # Get the appropriate channel index of the data
-            chan_ind = self.get_channel_data_index(self.ncomps, seed_code)
+            chan_ind = get_channel_data_index(self.ncomps, seed_code)
             wf.start = pick_waveform_details["wf_start"]
             wf.end = pick_waveform_details["wf_end"]
             pick_cont_data = pick_waveform_details["pick_cont_data"]
@@ -768,22 +768,6 @@ class DetectorDBConnection:
 
         return new_pick_needed
 
-    @staticmethod
-    def get_channel_data_index(ncomps, seed_code):
-        # Get the appropriate channel index of the data
-        if ncomps == 1:
-            chan_ind = 0
-        elif seed_code in ["EHZ", "BHZ", "HHZ"]:
-            chan_ind = 2
-        elif seed_code in ["EHE", "EH1", "BHE", "BH1", "HHE", "HH1"]:
-            chan_ind = 0
-        elif seed_code in ["EHN", "EH2", "BHN", "BH2", "HHN", "HH2"]:
-            chan_ind = 1
-        else:
-            raise ValueError("Something is wrong with the channel code")
-
-        return chan_ind
-
     def close_open_pytables(self):
         if self.detout_storage_P is not None:
             self.detout_storage_P.close()
@@ -797,3 +781,183 @@ class DetectorDBConnection:
         if self.waveform_storage_dict_S is not None:
             for key, stor in self.waveform_storage_dict_S.items():
                 stor.close()
+
+
+class SwagPickerDBConnection:
+
+    def __init__(self, phase, session_factory=None):
+        self.Session = session_factory or database.Session
+        # self.is_p = True if phase == "P" else False
+        self.phase = phase
+        self.repicker_method_id = None
+        self.calibration_method_id = None
+
+    def add_repicker_method(self, name, desc, path):
+        """Add a repicker method to the database. If it already exists, update it."""
+        with self.Session() as session:
+            with session.begin():
+                services.upsert_repicker_method(
+                    session, name, phase=self.phase, details=desc, path=path
+                )
+                self.repicker_method_id = services.get_repicker_method(session, name).id
+
+    def add_calibration_method(self, name, desc, path, loc_type, scale_type):
+        """Add a calibration method to the database. If it already exists, update it."""
+        with self.Session() as session:
+            with session.begin():
+                services.upsert_calibration_method(
+                    session,
+                    name,
+                    phase=self.phase,
+                    details=desc,
+                    path=path,
+                    loc_type=loc_type,
+                    scale_type=scale_type,
+                )
+                self.calibration_method_id = services.get_calibration_method(
+                    session, name
+                ).id
+
+    def get_3C_waveforms(
+        self,
+        n_samples,
+        proc_fn,
+        start,
+        end,
+        wf_source_list,
+        wf_filt_low=None,
+        wf_filt_high=None,
+        hdf_file_contains=None,
+    ):
+        with self.Session() as session:
+            with session.begin():
+                pick_inds, wf_source_ids, X = services.Waveforms.gather_3c_waveforms(
+                    session,
+                    n_samples=n_samples,
+                    channel_index_mapping_fn=get_channel_data_index,
+                    wf_process_fn=proc_fn,
+                    phase=self.phase,
+                    start=start,
+                    end=end,
+                    sources=wf_source_list,
+                    wf_filt_low=wf_filt_low,
+                    wf_filt_high=wf_filt_high,
+                    hdf_file_contains=hdf_file_contains,
+                )
+
+                return pick_inds, wf_source_ids, X
+            
+    def get_1C_waveforms(
+        self,
+        n_samples,
+        proc_fn,
+        start,
+        end,
+        wf_source_list,
+        wf_filt_low=None,
+        wf_filt_high=None,
+        hdf_file_contains=None,
+    ):
+        with self.Session() as session:
+            with session.begin():
+                pick_inds, wf_source_ids, X = services.Waveforms.gather_1c_waveforms(
+                    session,
+                    n_samples=n_samples,
+                    wf_process_fn=proc_fn,
+                    phase=self.phase,
+                    start=start,
+                    end=end,
+                    sources=wf_source_list,
+                    wf_filt_low=wf_filt_low,
+                    wf_filt_high=wf_filt_high,
+                    hdf_file_contains=hdf_file_contains,
+                )
+
+        return pick_inds, wf_source_ids, X
+
+    def save_corrections(
+        self,
+        all_ids,
+        ensemble_outputs,
+        summary_stats,
+        cal_results,
+        start_date,
+        end_date,
+        on_event=None,
+    ):
+        n_wfs = ensemble_outputs.shape[0]
+        n_picks = ensemble_outputs.shape[1]
+        # Open the pytable to store the predictions
+        storage = self._open_picker_output_storage(
+            n_picks, n_wfs, start_date, end_date, on_event
+        )
+
+        with self.Session() as session:
+            with session.begin():
+                try:
+                    storage.start_transaction()
+                    # Iterate over the picks
+                    for i in np.arange(0, n_wfs):
+                        i_ids = all_ids[i]
+                        # Save the prediction results
+                        corr = services.insert_pick_correction_pytable(
+                            session=session,
+                            storage=storage,
+                            pick_id=i_ids["pick_id"],
+                            method_id=self.repicker_method_id,
+                            wf_source_id=i_ids["wf_source_id"],
+                            median=summary_stats["median"][i],
+                            mean=summary_stats["mean"][i],
+                            std=summary_stats["std"][i],
+                            if_low=summary_stats["if_low"][i],
+                            if_high=summary_stats["if_high"][i],
+                            trim_median=summary_stats["trim_median"][i],
+                            trim_mean=summary_stats["trim_mean"][i],
+                            trim_std=summary_stats["trim_std"][i],
+                            predictions=ensemble_outputs[i],
+                        )
+                        for perc in cal_results.keys():
+                            # Add the CI information
+                            _ = services.insert_ci(
+                                session,
+                                corr_id=corr.id,
+                                method_id=self.calibration_method_id,
+                                percent=perc,
+                                lb=cal_results[perc]["arrivalTimeShiftLowerBound"][i],
+                                ub=cal_results[perc]["arrivalTimeShiftUpperBound"][i],
+                            )
+
+                except Exception as e:
+                    storage.rollback()
+                    storage.close()
+                    raise e
+
+    def _open_picker_output_storage(
+        self, n_total_picks, n_wfs, start, end, on_event=None
+    ):
+        storage = pytables_backend.SwagPicksStorage(
+            expected_array_length=n_total_picks,
+            start=start,
+            end=end,
+            phase=self.phase,
+            repicker_method_id=self.repicker_method_id,
+            expectedrows=n_wfs,
+            on_event=on_event,
+        )
+        return storage
+
+
+def get_channel_data_index(ncomps, seed_code):
+    # Get the appropriate channel index of the data
+    if ncomps == 1:
+        chan_ind = 0
+    elif seed_code in ["EHZ", "BHZ", "HHZ"]:
+        chan_ind = 2
+    elif seed_code in ["EHE", "EH1", "BHE", "BH1", "HHE", "HH1"]:
+        chan_ind = 0
+    elif seed_code in ["EHN", "EH2", "BHN", "BH2", "HHN", "HH2"]:
+        chan_ind = 1
+    else:
+        raise ValueError("Something is wrong with the channel code")
+
+    return chan_ind
