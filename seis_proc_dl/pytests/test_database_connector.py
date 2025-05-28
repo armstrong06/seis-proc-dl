@@ -672,9 +672,6 @@ class TestDetectorDBConnection:
             is_p=True,
             auth=auth,
             continuous_data=cont_data,
-            wf_filt_low=None,
-            wf_filt_high=None,
-            wf_proc_notes=wf_proc_notes,
             seconds_around_pick=seconds_around_pick,
             use_pytables=False,
         )
@@ -756,12 +753,12 @@ class TestDetectorDBConnection:
             assert wf[2].start == pick.ptime - timedelta(
                 seconds=params["seconds_around_pick"]
             ), "invalid start for wf[2]"
-            assert wf[0].filt_low is None
-            assert wf[1].filt_low is None
-            assert wf[2].filt_low is None
-            assert wf[0].filt_high is None
-            assert wf[1].filt_high is None
-            assert wf[2].filt_high is None
+            # assert wf[0].filt_low is None
+            # assert wf[1].filt_low is None
+            # assert wf[2].filt_low is None
+            # assert wf[0].filt_high is None
+            # assert wf[1].filt_high is None
+            # assert wf[2].filt_high is None
 
             if det.sample in [1000, 30000]:
                 assert (
@@ -855,9 +852,6 @@ class TestDetectorDBConnection:
             is_p=True,
             auth=params["auth"],
             continuous_data=cont_data,
-            wf_filt_low=None,
-            wf_filt_high=None,
-            wf_proc_notes=params["wf_proc_notes"],
             seconds_around_pick=params["seconds_around_pick"],
             use_pytables=False,
         )
@@ -886,12 +880,12 @@ class TestDetectorDBConnection:
         assert wf[0].start == metadata["starttime"], "invalid start for wf[0]"
         assert wf[1].start == metadata["starttime"], "invalid start for wf[1]"
         assert wf[2].start == metadata["starttime"], "invalid start for wf[2]"
-        assert wf[0].filt_low is None
-        assert wf[1].filt_low is None
-        assert wf[2].filt_low is None
-        assert wf[0].filt_high is None
-        assert wf[1].filt_high is None
-        assert wf[2].filt_high is None
+        # assert wf[0].filt_low is None
+        # assert wf[1].filt_low is None
+        # assert wf[2].filt_low is None
+        # assert wf[0].filt_high is None
+        # assert wf[1].filt_high is None
+        # assert wf[2].filt_high is None
 
         # 502 samples before, 1000 + 1 samples after
         assert len(wf[0].data) == 1503, "invalid data length for wf[0]"
@@ -947,9 +941,9 @@ class TestDetectorDBConnection:
             is_p=False,
             auth=auth,
             continuous_data=cont_data,
-            wf_filt_low=None,
-            wf_filt_high=None,
-            wf_proc_notes=wf_proc_notes,
+            # wf_filt_low=None,
+            # wf_filt_high=None,
+            # wf_proc_notes=wf_proc_notes,
             seconds_around_pick=seconds_around_pick,
             use_pytables=False,
         )
@@ -1002,9 +996,9 @@ class TestDetectorDBConnection:
             is_p=False,
             auth=params["auth"],
             continuous_data=cont_data,
-            wf_filt_low=None,
-            wf_filt_high=None,
-            wf_proc_notes=params["wf_proc_notes"],
+            # wf_filt_low=None,
+            # wf_filt_high=None,
+            # wf_proc_notes=params["wf_proc_notes"],
             seconds_around_pick=params["seconds_around_pick"],
             use_pytables=False,
         )
@@ -1033,12 +1027,12 @@ class TestDetectorDBConnection:
         assert wf[0].start == metadata["starttime"], "invalid start for wf[0]"
         assert wf[1].start == metadata["starttime"], "invalid start for wf[1]"
         assert wf[2].start == metadata["starttime"], "invalid start for wf[2]"
-        assert wf[0].filt_low is None
-        assert wf[1].filt_low is None
-        assert wf[2].filt_low is None
-        assert wf[0].filt_high is None
-        assert wf[1].filt_high is None
-        assert wf[2].filt_high is None
+        # assert wf[0].filt_low is None
+        # assert wf[1].filt_low is None
+        # assert wf[2].filt_low is None
+        # assert wf[0].filt_high is None
+        # assert wf[1].filt_high is None
+        # assert wf[2].filt_high is None
 
         # 502 samples before, 1000 + 1 samples after
         assert len(wf[0].data) == 1503, "invalid data length for wf[0]"
@@ -1240,9 +1234,6 @@ class TestDetectorDBConnection:
             is_p=True,
             auth=auth,
             continuous_data=cont_data,
-            wf_filt_low=None,
-            wf_filt_high=None,
-            wf_proc_notes=wf_proc_notes,
             seconds_around_pick=seconds_around_pick,
             use_pytables=True,
         )
@@ -1335,12 +1326,6 @@ class TestDetectorDBConnection:
                 assert wf_infos[2].start == pick.ptime - timedelta(
                     seconds=params["seconds_around_pick"]
                 ), "invalid start for wf[2]"
-                assert wf_infos[0].filt_low is None
-                assert wf_infos[1].filt_low is None
-                assert wf_infos[2].filt_low is None
-                assert wf_infos[0].filt_high is None
-                assert wf_infos[1].filt_high is None
-                assert wf_infos[2].filt_high is None
 
                 if det.sample in [1000, 30000]:
                     assert (
@@ -1415,9 +1400,6 @@ class TestDetectorDBConnection:
             is_p=False,
             auth=auth,
             continuous_data=cont_data,
-            wf_filt_low=None,
-            wf_filt_high=None,
-            wf_proc_notes=wf_proc_notes,
             seconds_around_pick=seconds_around_pick,
             use_pytables=True,
         )
@@ -1510,12 +1492,6 @@ class TestDetectorDBConnection:
                 assert wf_infos[2].start == pick.ptime - timedelta(
                     seconds=params["seconds_around_pick"]
                 ), "invalid start for wf[2]"
-                assert wf_infos[0].filt_low is None
-                assert wf_infos[1].filt_low is None
-                assert wf_infos[2].filt_low is None
-                assert wf_infos[0].filt_high is None
-                assert wf_infos[1].filt_high is None
-                assert wf_infos[2].filt_high is None
 
                 if det.sample in [1000, 30000]:
                     assert (
@@ -1606,9 +1582,6 @@ class TestDetectorDBConnection:
                 is_p=True,
                 auth=params["auth"],
                 continuous_data=cont_data,
-                wf_filt_low=None,
-                wf_filt_high=None,
-                wf_proc_notes=params["wf_proc_notes"],
                 seconds_around_pick=params["seconds_around_pick"],
                 use_pytables=True,
             )
@@ -1651,12 +1624,6 @@ class TestDetectorDBConnection:
             assert wf_infos[0].start == metadata["starttime"], "invalid start for wf[0]"
             assert wf_infos[1].start == metadata["starttime"], "invalid start for wf[1]"
             assert wf_infos[2].start == metadata["starttime"], "invalid start for wf[2]"
-            assert wf_infos[0].filt_low is None
-            assert wf_infos[1].filt_low is None
-            assert wf_infos[2].filt_low is None
-            assert wf_infos[0].filt_high is None
-            assert wf_infos[1].filt_high is None
-            assert wf_infos[2].filt_high is None
 
             # 502 samples before, 1000 + 1 samples after
             assert len(wfs[0]) == 1503, "invalid data length for wf[0]"
@@ -1721,9 +1688,6 @@ class TestDetectorDBConnection:
                 is_p=False,
                 auth=params["auth"],
                 continuous_data=cont_data,
-                wf_filt_low=None,
-                wf_filt_high=None,
-                wf_proc_notes=params["wf_proc_notes"],
                 seconds_around_pick=params["seconds_around_pick"],
                 use_pytables=True,
             )
@@ -1766,12 +1730,6 @@ class TestDetectorDBConnection:
             assert wf_infos[0].start == metadata["starttime"], "invalid start for wf[0]"
             assert wf_infos[1].start == metadata["starttime"], "invalid start for wf[1]"
             assert wf_infos[2].start == metadata["starttime"], "invalid start for wf[2]"
-            assert wf_infos[0].filt_low is None
-            assert wf_infos[1].filt_low is None
-            assert wf_infos[2].filt_low is None
-            assert wf_infos[0].filt_high is None
-            assert wf_infos[1].filt_high is None
-            assert wf_infos[2].filt_high is None
 
             # 502 samples before, 1000 + 1 samples after
             assert len(wfs[0]) == 1503, "invalid data length for wf[0]"

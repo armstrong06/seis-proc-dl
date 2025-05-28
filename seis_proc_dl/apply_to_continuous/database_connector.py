@@ -116,11 +116,31 @@ class DetectorDBConnection:
 
         return start_date, end_date
 
-    def add_waveform_source(self, name, desc, path=None):
+    def add_waveform_source(
+        self,
+        name,
+        desc,
+        path=None,
+        filt_low=None,
+        filt_high=None,
+        detrend=None,
+        normalize=None,
+        common_samp_rate=None,
+    ):
         """Add a waveform source to the database. If it already exists, update it."""
         with self.Session() as session:
             with session.begin():
-                services.upsert_waveform_source(session, name, details=desc, path=path)
+                services.upsert_waveform_source(
+                    session,
+                    name,
+                    details=desc,
+                    path=path,
+                    filt_low=filt_low,
+                    filt_high=filt_high,
+                    detrend=detrend,
+                    normalize=normalize,
+                    common_samp_rate=common_samp_rate,
+                )
                 self.wf_source_id = services.get_waveform_source(session, name).id
 
     def add_detection_method(self, name, desc, path, phase):
@@ -436,9 +456,7 @@ class DetectorDBConnection:
                     seed_code=seed_code,
                     ncomps=self.ncomps,
                     phase=common_wf_details["phase"],
-                    filt_low=common_wf_details["wf_filt_low"],
-                    filt_high=common_wf_details["wf_filt_high"],
-                    proc_notes=common_wf_details["wf_proc_notes"],
+                    wf_source_id=self.wf_source_id,
                     on_event=common_wf_details["on_event"],
                     expectedrows=(
                         self.EXPECTED_DAILY_P_PICKS * self.channel_info.ndays
@@ -466,9 +484,6 @@ class DetectorDBConnection:
         is_p,
         auth,
         continuous_data,
-        wf_filt_low,
-        wf_filt_high,
-        wf_proc_notes,
         seconds_around_pick,
         use_pytables=True,
         on_event=None,
@@ -477,9 +492,6 @@ class DetectorDBConnection:
         necessary additional information"""
 
         common_wf_details = {
-            "wf_filt_low": wf_filt_low,
-            "wf_filt_high": wf_filt_high,
-            "wf_proc_notes": wf_proc_notes,
             "use_pytables": use_pytables,
             "on_event": on_event,
         }
@@ -645,12 +657,10 @@ class DetectorDBConnection:
                 wf = Waveform(
                     data_id=common_wf_details["data_id"],
                     chan_id=chan_id,
-                    filt_low=common_wf_details["wf_filt_low"],
-                    filt_high=common_wf_details["wf_filt_high"],
                     data=wf_data.tolist(),
                     start=pick_wf_details["wf_start"],
                     end=pick_wf_details["wf_end"],
-                    proc_notes=common_wf_details["wf_proc_notes"],
+                    wf_source_id=self.wf_source_id
                 )
                 # Add the waveform to the pick
                 pick.wfs.add(wf)
@@ -674,9 +684,6 @@ class DetectorDBConnection:
                     wf_source_id=self.wf_source_id,
                     start=pick_wf_details["wf_start"],
                     end=pick_wf_details["wf_end"],
-                    filt_low=common_wf_details["wf_filt_low"],
-                    filt_high=common_wf_details["wf_filt_high"],
-                    proc_notes=common_wf_details["wf_proc_notes"],
                     signal_start_ind=pick_wf_details["wf_start_ind"],
                     signal_end_ind=pick_wf_details["wf_end_ind"],
                 )
@@ -846,7 +853,7 @@ class SwagPickerDBConnection:
                 )
 
                 return pick_inds, wf_source_ids, X
-            
+
     def get_1C_waveforms(
         self,
         n_samples,

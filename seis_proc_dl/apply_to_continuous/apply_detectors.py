@@ -107,15 +107,24 @@ class ApplyDetector:
             self.wf_seconds_around_pick = config.database.wf_seconds_around_pick
             self.db_pick_author = config.database.pick_author
             self.min_gap_sep_seconds = config.database.min_gap_separation_seconds
-            self.wf_proc_notes = None # "From Dataloader.continuous_data"
             self.p_det_thresh = None
             self.p_pick_thresh = None
             self.s_det_thresh = None
             self.s_pick_thresh = None
 
-            self.db_conn.add_waveform_source(name="extract-dailyContData",
-                                             desc=("Waveform snippets are from the daily mseed file that has been loaded and "
-                                                   "processed using seis-proc-dl.apply_to_continuous.apply_detectors.DataLoader"))
+            self.db_conn.add_waveform_source(
+                name="extract-dailyContData",
+                desc=(
+                    "Waveform snippets are from the daily mseed file that has been loaded and "
+                    "processed using seis-proc-dl.apply_to_continuous.apply_detectors.DataLoader. "
+                    "Mseed files were resampled to 100 Hz beforehand. No additional processing is applied."
+                ),
+                filt_low=None,
+                filt_high=None,
+                detrend=None,
+                normalize=None,
+                common_samp_rate=100.0,
+            )
             if ncomps == 1:
                 self.p_det_thresh = config.database.p_det_thresh_1c
                 self.p_pick_thresh = config.database.p_pick_thresh_1c
@@ -402,9 +411,6 @@ class ApplyDetector:
                 is_p=True,
                 auth=self.db_pick_author,
                 continuous_data=cont_data,
-                wf_filt_low=None,
-                wf_filt_high=None,
-                wf_proc_notes=self.wf_proc_notes,
                 seconds_around_pick=self.wf_seconds_around_pick,
                 use_pytables=self.use_pytables,
                 on_event=logger.info,
@@ -440,9 +446,6 @@ class ApplyDetector:
                 is_p=False,
                 auth=self.db_pick_author,
                 continuous_data=cont_data,
-                wf_filt_low=None,
-                wf_filt_high=None,
-                wf_proc_notes=self.wf_proc_notes,
                 seconds_around_pick=self.wf_seconds_around_pick,
                 use_pytables=self.use_pytables,
                 on_event=logger.debug,
