@@ -12,7 +12,7 @@ from obspy.core import UTCDateTime as UTC
 from seis_proc_dl.apply_to_continuous.database_connector import DetectorDBConnection
 from seis_proc_dl.apply_to_continuous.apply_detectors import ApplyDetector
 from seis_proc_db.database import engine
-from seis_proc_db import services, tables
+from seis_proc_db import services, tables, pytables_backend
 
 
 datetimeformat = "%Y-%m-%dT%H:%M:%S.%f"
@@ -244,7 +244,9 @@ class TestDetectorDBConnection:
         # Unpack session & patch function
         session, db_conn, _, _ = db_session_with_3c_stat_loaded
 
-        db_conn.add_waveform_source("TEST-extracted", "Extracted from DataLoader.continuous_data")
+        db_conn.add_waveform_source(
+            "TEST-extracted", "Extracted from DataLoader.continuous_data"
+        )
         db_conn.add_detection_method("TEST-P", "test method", "data/path/P", "P")
         db_conn.add_detection_method("TEST-S", "test method", "data/path/S", "S")
 
@@ -253,10 +255,8 @@ class TestDetectorDBConnection:
     def test_add_waveform_source(self, db_session_with_detection_methods):
         session, db_conn = db_session_with_detection_methods
 
-        assert (
-            db_conn.wf_source_id is not None
-        ), "wf_source_id is not set"
-        wf_source= session.get(tables.WaveformSource, db_conn.wf_source_id)
+        assert db_conn.wf_source_id is not None, "wf_source_id is not set"
+        wf_source = session.get(tables.WaveformSource, db_conn.wf_source_id)
         assert wf_source is not None, "No waveform source returned"
         assert wf_source.name == "TEST-extracted", "invalid name"
 
@@ -2554,3 +2554,334 @@ class TestApplyDetectorDBPytables:
         assert (
             applier.db_conn.waveform_storage_dict_P is None
         ), "waveform storage should not be opened"
+
+
+class SwagPickerDBConnection:
+
+    def test_init():
+        pass
+
+    def test_add_repicker_method():
+        pass
+
+    def test_add_calibration_method():
+        pass
+
+    def test_get_waveforms():
+        pass
+
+    def test_open_picker_output_storage():
+        pass
+
+    def test_save_corrections():
+        pass
+
+
+from seis_proc_dl.apply_to_continuous import apply_swag_pickers
+
+
+class TestMultiSWAGPickerDB:
+
+    @pytest.fixture
+    def db_session_with_waveform_info(self, db_session, mock_pytables_config):
+        db_session, _ = db_session
+        ids = {}
+        # Insert the stations
+        sta_dict = {
+            "ondate": datetime.strptime("2010-01-01T00:00:00.00", datetimeformat),
+            "lat": 44.7155,
+            "lon": -110.67917,
+            "elev": 2336,
+        }
+        sta1 = services.insert_station(db_session, "JK", "TST1", **sta_dict)
+        db_session.flush()
+
+        # Insert the channels
+        chan_info = {
+            "loc": "01",
+            "ondate": datetime.strptime("2010-01-01T00:00:00.00", datetimeformat),
+            "samp_rate": 100.0,
+            "clock_drift": 1e-5,
+            "sensor_desc": "Nanometrics something or other",
+            "sensit_units": "M/S",
+            "sensit_val": 9e9,
+            "sensit_freq": 5,
+            "lat": 44.7155,
+            "lon": -110.67917,
+            "elev": 2336,
+            "depth": 100,
+            "azimuth": 90,
+            "dip": -90,
+            "offdate": None,
+            "overall_gain_vel": None,
+        }
+        all_channel_dict = {}
+        for id in [sta1.id]:
+            for code in ["HHZ", "HHE", "HHN"]:
+                chan_info["seed_code"] = code
+                chan_info["sta_id"] = id
+                all_channel_dict[f"{id}.{code}"] = services.insert_channel(
+                    db_session, chan_info
+                )
+
+        db_session.flush()
+
+        # Insert P Picks
+        p_dict = {
+            "chan_pref": "HH",
+            "phase": "P",
+            "ptime": datetime.strptime("2010-02-01T00:00:00.00", datetimeformat),
+            "auth": "TEST",
+        }
+        p1 = services.insert_pick(db_session, sta1.id, **p_dict)
+        p_dict["ptime"] = datetime.strptime("2010-02-02T00:00:00.00", datetimeformat)
+
+        # Insert S Picks
+        s_dict = {
+            "chan_pref": "HH",
+            "phase": "S",
+            "ptime": datetime.strptime("2010-02-01T12:00:00.00", datetimeformat),
+            "auth": "TEST",
+        }
+        s1 = services.insert_pick(db_session, sta1.id, **s_dict)
+        s_dict["ptime"] = datetime.strptime("2010-02-02T12:00:00.00", datetimeformat)
+
+        # Insert waveform sources
+        wf_source1 = services.insert_waveform_source(
+            db_session, "TEST-ExtractContData", "Extract snippets"
+        )
+
+        db_session.flush()
+        # for src in [wf_source1, wf_source2, wf_source3]:
+        #     print(src.id, src.name)
+
+        ids["p_pick1"] = p1.id
+        ids["s_pick1"] = s1.id
+        ids["wf_source1"] = wf_source1.id
+
+        try:
+            # Open waveform storages
+            wf_storages = {}
+            for code in ["HHZ", "HHE", "HHN"]:
+                for phase in ["P", "S"]:
+                    wf_storage = pytables_backend.WaveformStorage(
+                        expected_array_length=1200,
+                        net="JK",
+                        sta=str(id),
+                        loc="01",
+                        seed_code=code,
+                        ncomps=3,
+                        phase=phase,
+                        wf_source_id=wf_source1.id,
+                    )
+                    wf_storages[f"{id}.{code}.{phase}.{wf_source1.id}"] = wf_storage
+
+            ### Insert waveform infos ###
+
+            def insert_wf_info(
+                phase, pick, chan_code, wf_source, data, start_ind=None, end_ind=None
+            ):
+                _ = services.insert_waveform_pytable(
+                    db_session,
+                    wf_storages[f"{pick.sta_id}.{chan_code}.{phase}.{wf_source.id}"],
+                    all_channel_dict[f"{pick.sta_id}.{chan_code}"].id,
+                    pick.id,
+                    wf_source.id,
+                    start=pick.ptime - timedelta(seconds=0.5),
+                    end=pick.ptime + timedelta(seconds=0.5),
+                    data=data,
+                    signal_start_ind=start_ind,
+                    signal_end_ind=end_ind,
+                )
+
+            # TODO: I should load the examples from Ben...
+
+            p_data = np.loadtxt(
+                f"{examples_dir}/ben_data/pickers/cnnOneComponentP/uu.gzu.ehz.01.txt",
+                delimiter=",",
+            )
+            p_data = np.concatenate([np.zeros((400,)), p_data[:, 1], np.zeros((400,))])
+            assert p_data.shape == (1200,)
+            # Info for P Pick 1
+            for i, code in enumerate(["HHE", "HHN"]):
+                insert_wf_info("P", p1, code, wf_source1, np.zeros(1200))
+            insert_wf_info("P", p1, "HHZ", wf_source1, p_data)
+
+            s_data = np.loadtxt(
+                f"{examples_dir}/ben_data/pickers/cnnThreeComponentS/uu.gzu.eh.zne.01.txt",
+                delimiter=",",
+            )
+            s_data = np.concatenate(
+                [np.zeros((300, 3)), s_data[:, 1:], np.zeros((300, 3))]
+            )
+            assert s_data.shape == (1200, 3)
+            # Info for S Pick 1
+            for i, code in enumerate(["HHZ", "HHN", "HHE"]):
+                insert_wf_info("S", s1, code, wf_source1, s_data[:, i])
+
+            db_session.commit()
+        finally:
+            for _, wf_storage in wf_storages.items():
+                wf_storage.commit()
+                if wf_storage._is_open:
+                    wf_storage.close()
+        return db_session, ids
+
+    @pytest.fixture
+    def p_ex_paths(self):
+        selected_model_path = (
+            "/uufs/chpc.utah.edu/common/home/koper-group3/alysha/selected_models"
+        )
+        p_cal_file = f"{selected_model_path}/p_calibration_model_medians_ensemble_IFtrimmed_sklearn1.3.1.joblib"
+
+        return selected_model_path, p_cal_file
+
+    @pytest.fixture
+    def s_ex_paths(self):
+        selected_model_path = (
+            "/uufs/chpc.utah.edu/common/home/koper-group3/alysha/selected_models"
+        )
+        s_cal_file = f"{selected_model_path}/s_calibration_model_medians_ensemble_IFtrimmed_sklearn1.3.1.joblib"
+
+        return selected_model_path, s_cal_file
+
+    @pytest.fixture
+    def init_p_picker(self, p_ex_paths):
+        model_path, cal_file = p_ex_paths
+        sp = apply_swag_pickers.MultiSWAGPickerDB(
+            is_p_picker=True,
+            swag_model_dir=model_path,
+            cal_model_file=cal_file,
+            # device="cpu",
+        )
+        return sp
+
+    @pytest.fixture
+    def init_s_picker(self, s_ex_paths):
+        model_path, cal_file = s_ex_paths
+        sp = apply_swag_pickers.MultiSWAGPickerDB(
+            is_p_picker=False,
+            swag_model_dir=model_path,
+            cal_model_file=cal_file,
+            # device="cpu",
+        )
+        return sp
+
+    def test_init_P(self, p_ex_paths, init_p_picker):
+        model_path, cal_file = p_ex_paths
+        sp = init_p_picker
+        assert sp.phase == "P"
+        assert sp.device == "cuda:0"
+        assert sp.swag_model_dir == model_path
+        assert sp.cal_model_file == cal_file
+
+    def test_init_S(self, s_ex_paths, init_s_picker):
+        model_path, cal_file = s_ex_paths
+        sp = init_s_picker
+        assert sp.phase == "S"
+        assert sp.device == "cuda:0"
+        assert sp.swag_model_dir == model_path
+        assert sp.cal_model_file == cal_file
+
+    @pytest.fixture
+    def method_dicts_ex(self):
+        repicker_dict = {
+            "name": "TEST-MSWAG-BSSA-2023",
+            "desc": "MSWAG models presented in Armstrong et al., 2023.",
+        }
+        cal_dict = {
+            "name": "TEST-Kuleshov",
+            "desc": (
+                "Empirical calibration using Kuleshov et al., 2018 approach. Calibration was used in Armstrong et al. 2023."
+                "Uses the trimmed (inner fence) median and std dev of the combined 3 swag model predictions."
+            ),
+        }
+
+        return repicker_dict, cal_dict
+
+    @pytest.fixture
+    def p_picker_with_db_conn(
+        self, init_p_picker, db_session_with_waveform_info, method_dicts_ex
+    ):
+        sp = init_p_picker
+        repicker_dict, cal_dict = method_dicts_ex
+        session, ids = db_session_with_waveform_info  # Unpack session & patch function
+        sp.start_db_conn(repicker_dict, cal_dict, session_factory=lambda: session)
+
+        return sp, ids
+
+    @pytest.fixture
+    def s_picker_with_db_conn(
+        self, init_s_picker, db_session_with_waveform_info, method_dicts_ex
+    ):
+        sp = init_s_picker
+        session, ids = db_session_with_waveform_info  # Unpack session & patch function
+        repicker_dict, cal_dict = method_dicts_ex
+        sp.start_db_conn(repicker_dict, cal_dict, session_factory=lambda: session)
+
+        return sp, ids
+
+    def test_start_db_conn(self, p_picker_with_db_conn):
+        sp, _ = p_picker_with_db_conn
+        assert sp.db_conn is not None, "db connection not set"
+        assert sp.db_conn.phase == "P", "phase type is not set correctly in db conn"
+        assert (
+            sp.db_conn.repicker_method_id is not None
+        ), "repicker_method_id is not set"
+        assert (
+            sp.db_conn.calibration_method_id is not None
+        ), "calibration_method_id is not set"
+        assert sp.cal_loc_type == "trim_median"
+        assert sp.cal_scale_type == "trim_std"
+
+    def test_torch_loader_from_db_P(self, p_picker_with_db_conn):
+        sp, init_ids = p_picker_with_db_conn
+        returned_ids, loader = sp.torch_loader_from_db(
+            400,
+            1,
+            1,
+            datetime.strptime("2010-02-01T00:00:00.00", datetimeformat),
+            datetime.strptime("2010-02-05T00:00:00.00", datetimeformat),
+            ["TEST-ExtractContData"],
+        )
+        assert len(returned_ids) == 1
+        assert returned_ids[0]["pick_id"] == init_ids["p_pick1"]
+        assert returned_ids[0]["wf_source_id"] == init_ids["wf_source1"]
+        ref_proc_data = np.loadtxt(
+            f"{examples_dir}/ben_data/pickers/cnnOneComponentP/uu.gzu.ehz.01.proc.txt",
+            delimiter=",",
+        )
+        ref_proc_data = sp.normalize_example(ref_proc_data)
+        returned_data = loader.dataset[0].cpu().numpy()[0]
+        assert ref_proc_data[:, 1].shape == returned_data.shape
+        assert np.allclose(ref_proc_data[:, 1], returned_data, 1e-2)
+
+    def test_torch_loader_from_db_S(self, s_picker_with_db_conn):
+        sp, init_ids = s_picker_with_db_conn
+        returned_ids, loader = sp.torch_loader_from_db(
+            600,
+            1,
+            1,
+            datetime.strptime("2010-02-01T00:00:00.00", datetimeformat),
+            datetime.strptime("2010-02-05T00:00:00.00", datetimeformat),
+            ["TEST-ExtractContData"],
+        )
+        assert len(returned_ids) == 1
+        assert returned_ids[0]["pick_id"] == init_ids["s_pick1"]
+        assert returned_ids[0]["wf_source_id"] == init_ids["wf_source1"]
+        ref_proc_data = np.loadtxt(
+            f"{examples_dir}/ben_data/pickers/cnnThreeComponentS/uu.gzu.eh.zne.01.proc.txt",
+            delimiter=",",
+        )
+        # Don't include the time column from Ben's example
+        # Ben's data is ordered ZNE and mine is ordered ENZ
+        ref_proc_data = sp.normalize_example(ref_proc_data[:, [3, 2, 1]])
+        returned_data = loader.dataset[0].cpu().numpy()
+        # Data loader reorders the array
+        assert ref_proc_data.shape == returned_data.T.shape
+        assert np.allclose(ref_proc_data[:, 0], returned_data[0, :], 1e-2)
+        assert np.allclose(ref_proc_data[:, 1], returned_data[1, :], 1e-2)
+        assert np.allclose(ref_proc_data[:, 2], returned_data[2, :], 1e-2)
+
+    def test_format_and_save(self):
+        pass

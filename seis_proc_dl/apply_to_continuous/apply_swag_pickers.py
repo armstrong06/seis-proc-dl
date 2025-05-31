@@ -60,9 +60,9 @@ class SwagPicker:
         self.model.to(self.device)
         map_location = None
         if self.device == "cpu":
-            map_location = torch.device('cpu')
+            map_location = torch.device("cpu")
 
-        print("Loading model %s" % checkpoint_file)
+        logger.info("Loading model %s" % checkpoint_file)
         checkpoint = torch.load(checkpoint_file, map_location=map_location)
         self.model.load_state_dict(checkpoint["state_dict"])
         # self.batchsize = batchsize
@@ -95,7 +95,7 @@ class SwagPicker:
 
 class Dset(torch.utils.data.Dataset):
     def __init__(self, data):
-        print(data.shape)
+        logger.info(f"Dset shape: {data.shape}")
         self.data = torch.from_numpy(data.transpose((0, 2, 1))).float()
 
     def __getitem__(self, index):
@@ -116,10 +116,11 @@ class BaseMultiSWAGPicker(ABC):
         self.device = device
         self.swag_model_dir = None
         self.cal_model_file = None
-        
 
     ## GENERAL FUNCTIONS USED BY WHEN USING DISK OR DB ##
-    def load_swag_ensemble(self, model1, model2, model3, seeds, cov_mat, k, swag_model_dir=None):
+    def load_swag_ensemble(
+        self, model1, model2, model3, seeds, cov_mat, k, swag_model_dir=None
+    ):
 
         if swag_model_dir is None:
             if self.swag_model_dir is None:
@@ -165,10 +166,10 @@ class BaseMultiSWAGPicker(ABC):
                 cont_loader, N, train_loader
             )
             et = time.time()
-            print(
+            logger.info(
                 f"Average time per batch for model {i}: {(et-st)/len(cont_loader):3.2f} s"
             )
-            print(f"Average time per sample for model {i}: {(et-st)/N:3.2f} s")
+            logger.info(f"Average time per sample for model {i}: {(et-st)/N:3.2f} s")
 
         return ensemble_outputs
 
@@ -189,6 +190,7 @@ class BaseMultiSWAGPicker(ABC):
         y_pred = np.array(y_pred)
         pred_std = np.array(pred_std)
         assert np.all(pred_std > 0), "Standard deviations should be positive"
+
         # df_data = {"y_pred": y_pred, "std": pred_std}
         # df = pd.DataFrame(data=df_data)
         # y_lb = df.apply(
@@ -200,6 +202,7 @@ class BaseMultiSWAGPicker(ABC):
         # Don't use pandas because don't need it for anything else if using the DB
         def get_bounds(p, loc, scale):
             return norm.ppf(p, loc, scale)
+
         np_func = np.vectorize(get_bounds)
         y_lb = np_func(lb_transform, y_pred, pred_std)
         y_ub = np_func(ub_transform, y_pred, pred_std)
@@ -293,6 +296,7 @@ class MultiSWAGPicker(BaseMultiSWAGPicker):
         n_meta_rows=-1,
     ):
         import pandas as pd
+
         columns = [
             "eventIdentifier",
             "network",
@@ -322,7 +326,7 @@ class MultiSWAGPicker(BaseMultiSWAGPicker):
         h5_outfile = os.path.join(
             outfile_pref, f"corrections.{self.phase.lower()}Arrivals.{region}.h5"
         )
-        print("Writing", csv_outfile, h5_outfile)
+        logger.info("Writing", csv_outfile, h5_outfile)
 
         meta_df.to_csv(csv_outfile, index=False, float_format="%0.6f")
         with h5py.File(h5_outfile, "w") as f:
@@ -383,27 +387,23 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
         start_date,
         end_date,
         wf_source_list,
-        wf_filt_low=None,
-        wf_filt_high=None,
-        hdf_file_contains=None,
     ):
 
-        params = {
-            "n_samples": n_samples,
-            "start": start_date,
-            "end": end_date,
-            "wf_source_list": wf_source_list,
-            "wf_filt_low": wf_filt_low,
-            "wf_filt_high": wf_filt_high,
-            "hdf_file_contains": hdf_file_contains,
-        }
-
         if self.phase == "S":
-            params["proc_fn"] = self.process_3c_S
-            ids, X = self.db_conn.get_3C_waveforms(**params)
+            proc_fn = self.process_3c_S
+            threeC_waveforms = True
         else:
-            params["proc_fn"] = self.process_1c_P
-            ids, X = self.db_conn.get_1C_waveforms(**params)
+            proc_fn = self.process_1c_P
+            threeC_waveforms = False
+
+        ids, X = self.db_conn.get_waveforms(
+            n_samples=n_samples,
+            threeC_waveforms=threeC_waveforms,
+            proc_fn=proc_fn,
+            start=start_date,
+            end=end_date,
+            wf_source_list=wf_source_list,
+        )
 
         dset = Dset(X)
         loader = torch.utils.data.DataLoader(
@@ -429,10 +429,11 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
 
     @staticmethod
     def _get_lb_ub_from_percent(percent):
-        d = (100 - percent) / 2
-        ub = 100 - d
+        dec = percent * 0.01
+        d = (1 - dec) / 2
+        ub = 1 - d
 
-        return int(d), int(ub)
+        return round(d, 2), round(ub, 2)
 
     def get_calibrated_pick_bounds_percent(self, percent):
         assert percent > 1 and percent < 100, "percent should be > 1 and < 100"
@@ -489,7 +490,7 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
         # Compute trimmed means and residuals
         trimmed_means = mx.mean(axis=1).data
         # Compute trimmed medians
-        trimmed_medians = np.ma.median(trimmed_medians, axis=1)
+        trimmed_medians = np.ma.median(mx, axis=1)
 
         results = {
             "trim_std": trimmed_stds,
@@ -501,7 +502,7 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
 
         return results
 
-    def process_3c_S(self, wfs, desired_sampling_rate=100):
+    def process_3c_S(self, wfs, desired_sampling_rate=100, normalize=True):
         """Process 3C S data using pyuussmlmodels.Pickers.CNNThreeComponentS.Preprocessing
         Args:
             wfs (np.array): Waveform to process (S, 3)
@@ -524,11 +525,12 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
         processed[:, 1] = proc_n
         processed[:, 2] = proc_z
 
-        processed = self.normalize_example(processed)
+        if normalize:
+            processed = self.normalize_example(processed)
 
         return processed
 
-    def process_1c_P(self, wf, desired_sampling_rate=100):
+    def process_1c_P(self, wf, desired_sampling_rate=100, normalize=True):
         """Wrapper around pyuussmlmodels 1C UNet preprocessing function for use in format_continuous_for_unet.
 
         Args:
@@ -544,7 +546,8 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
             :, None
         ]
 
-        processed = self.normalize_example(processed)
+        if normalize:
+            processed = self.normalize_example(processed)
 
         return processed
 

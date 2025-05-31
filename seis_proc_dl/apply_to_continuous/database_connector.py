@@ -660,7 +660,7 @@ class DetectorDBConnection:
                     data=wf_data.tolist(),
                     start=pick_wf_details["wf_start"],
                     end=pick_wf_details["wf_end"],
-                    wf_source_id=self.wf_source_id
+                    wf_source_id=self.wf_source_id,
                 )
                 # Add the waveform to the pick
                 pick.wfs.add(wf)
@@ -825,62 +825,29 @@ class SwagPickerDBConnection:
                     session, name
                 ).id
 
-    def get_3C_waveforms(
+    def get_waveforms(
         self,
         n_samples,
+        threeC_waveforms,
         proc_fn,
         start,
         end,
         wf_source_list,
-        wf_filt_low=None,
-        wf_filt_high=None,
-        hdf_file_contains=None,
     ):
         with self.Session() as session:
             with session.begin():
-                pick_inds, wf_source_ids, X = services.Waveforms.gather_3c_waveforms(
+                return services.Waveforms().gather_waveforms(
                     session,
                     n_samples=n_samples,
+                    threeC_waveforms=threeC_waveforms,
                     channel_index_mapping_fn=get_channel_data_index,
                     wf_process_fn=proc_fn,
                     phase=self.phase,
                     start=start,
                     end=end,
                     sources=wf_source_list,
-                    wf_filt_low=wf_filt_low,
-                    wf_filt_high=wf_filt_high,
-                    hdf_file_contains=hdf_file_contains,
+                    include_multiple_wf_sources=False,
                 )
-
-                return pick_inds, wf_source_ids, X
-
-    def get_1C_waveforms(
-        self,
-        n_samples,
-        proc_fn,
-        start,
-        end,
-        wf_source_list,
-        wf_filt_low=None,
-        wf_filt_high=None,
-        hdf_file_contains=None,
-    ):
-        with self.Session() as session:
-            with session.begin():
-                pick_inds, wf_source_ids, X = services.Waveforms.gather_1c_waveforms(
-                    session,
-                    n_samples=n_samples,
-                    wf_process_fn=proc_fn,
-                    phase=self.phase,
-                    start=start,
-                    end=end,
-                    sources=wf_source_list,
-                    wf_filt_low=wf_filt_low,
-                    wf_filt_high=wf_filt_high,
-                    hdf_file_contains=hdf_file_contains,
-                )
-
-        return pick_inds, wf_source_ids, X
 
     def save_corrections(
         self,
@@ -938,6 +905,8 @@ class SwagPickerDBConnection:
                     storage.rollback()
                     storage.close()
                     raise e
+
+        storage.commit()
 
     def _open_picker_output_storage(
         self, n_total_picks, n_wfs, start, end, on_event=None
