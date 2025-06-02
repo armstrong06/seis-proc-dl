@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from copy import deepcopy
 import numpy as np
 import os
+import shutil
 from unittest import mock
 
 from obspy.core import UTCDateTime as UTC
@@ -24,9 +25,11 @@ TestSessionFactory = sessionmaker(bind=engine, expire_on_commit=False)
 
 @pytest.fixture
 def mock_pytables_config():
+    d = "./pytests/pytables_outputs"
+    shutil.rmtree(d)
     with mock.patch(
         "seis_proc_db.pytables_backend.HDF_BASE_PATH",
-        "./pytests/pytables_outputs",
+        d,
     ):
         yield
 
@@ -2883,5 +2886,81 @@ class TestMultiSWAGPickerDB:
         assert np.allclose(ref_proc_data[:, 1], returned_data[1, :], 1e-2)
         assert np.allclose(ref_proc_data[:, 2], returned_data[2, :], 1e-2)
 
-    def test_format_and_save(self):
-        pass
+    def test_calibrate_and_save(self, p_picker_with_db_conn, mock_pytables_config):
+        sp, init_ids = p_picker_with_db_conn
+        pick_source_ids = [
+            {"pick_id": init_ids["p_pick1"], "wf_source_id": init_ids["wf_source1"]}
+        ]
+        ensemble_outputs = np.arange(0, 120).reshape((1, 120))
+        ci_percents = [68, 90]
+        start_date = datetime.strptime("2010-02-01T00:00:00.00", datetimeformat)
+        end_date = datetime.strptime("2010-02-02T00:00:00.00", datetimeformat)
+
+        sp.calibrate_and_save(
+            pick_source_ids, ensemble_outputs, ci_percents, start_date, end_date
+        )
+
+        inserted_corr = services.get_pick_corrs(
+            sp.db_conn.Session(), init_ids["p_pick1"]
+        )
+        assert (
+            len(inserted_corr) == 1
+        ), "incorrect number of pick corrections returned. Expected 1"
+        assert (
+            inserted_corr[0].method_id == sp.db_conn.repicker_method_id
+        ), "incorrect method_id"
+        assert (
+            inserted_corr[0].wf_source_id == init_ids["wf_source1"]
+        ), "incorrect wf_source_id"
+        assert inserted_corr[0].median == np.median(
+            ensemble_outputs[0]
+        ), "incorrect median"
+        assert inserted_corr[0].mean == np.mean(ensemble_outputs[0]), "incorrect mean"
+        assert inserted_corr[0].std == np.std(ensemble_outputs[0]), "incorrect std"
+        trim_results = sp.trim_dists(ensemble_outputs)
+        assert (
+            inserted_corr[0].trim_mean == trim_results["trim_mean"][0]
+        ), "incorrect trim_mean"
+        assert (
+            inserted_corr[0].trim_median == trim_results["trim_median"][0]
+        ), "incorrect trim_median"
+        assert (
+            inserted_corr[0].trim_std == trim_results["trim_std"][0]
+        ), "incorrect trim_std"
+        assert inserted_corr[0].if_low == trim_results["if_low"][0], "incorrect if_low"
+        assert (
+            inserted_corr[0].if_high == trim_results["if_high"][0]
+        ), "incorrect if_high"
+        expected_pytable_file = (
+            f"repicker{sp.db_conn.repicker_method_id}_P_2010-02-01_2010-02-02_N120.h5"
+        )
+        assert inserted_corr[0].preds_hdf_file == expected_pytable_file
+        cis = inserted_corr[0].cis
+        assert len(cis) == 2, "incorrect number of credible intervals"
+        assert cis[0].percent in [68, 90]
+        if cis[0].percent == 68:
+            assert cis[1].percent == 90
+            assert cis[0].lb > cis[1].lb
+            assert cis[0].ub < cis[1].ub
+        elif cis[0].percent == 90:
+            assert cis[1].percent == 68
+            assert cis[1].lb > cis[0].lb
+            assert cis[1].ub < cis[0].ub
+
+        assert cis[0].method_id == sp.db_conn.calibration_method_id
+        assert cis[1].method_id == sp.db_conn.calibration_method_id
+
+        # Load in and check pytable
+        try:
+            pyt_reader = pytables_backend.SwagPicksStorageReader(expected_pytable_file)
+            assert (
+                pyt_reader.table.nrows == 1
+            ), "expected 1 row inserted into the pytable"
+            assert pyt_reader.table.attrs.phase == "P"
+            assert pyt_reader.table.attrs.start == "2010-02-01"
+            assert pyt_reader.table.attrs.end == "2010-02-02"
+            row = pyt_reader.select_row(inserted_corr[0].id)
+            assert row is not None
+            assert np.array_equal(row["data"], ensemble_outputs[0])
+        finally:
+            pyt_reader.close()

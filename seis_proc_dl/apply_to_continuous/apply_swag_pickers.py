@@ -160,17 +160,20 @@ class BaseMultiSWAGPicker(ABC):
     def apply_picker(models, cont_loader, train_loader, N):
         n_examples = cont_loader.dataset.data.shape[0]
         ensemble_outputs = np.zeros((n_examples, N * len(models)))
+        total_st = time.time()
         for i, model in enumerate(models):
             st = time.time()
             ensemble_outputs[:, i * N : i * N + N] = model.apply_model(
                 cont_loader, N, train_loader
             )
             et = time.time()
-            logger.info(
+            logger.debug(
                 f"Average time per batch for model {i}: {(et-st)/len(cont_loader):3.2f} s"
             )
-            logger.info(f"Average time per sample for model {i}: {(et-st)/N:3.2f} s")
+            logger.debug(f"Average time per sample for model {i}: {(et-st)/N:3.2f} s")
 
+        total_et = time.time()
+        logger.debug(f"Total time to apply all models {total_et-total_st:4.2f} s")
         return ensemble_outputs
 
     def get_calibrated_pick_bounds(self, lb, ub, cal_model_file=None):
@@ -203,7 +206,7 @@ class BaseMultiSWAGPicker(ABC):
         def get_bounds(p, loc, scale):
             return norm.ppf(p, loc, scale)
 
-        np_func = np.vectorize(get_bounds)
+        np_func = np.vectorize(get_bounds, otypes=[float])
         y_lb = np_func(lb_transform, y_pred, pred_std)
         y_ub = np_func(ub_transform, y_pred, pred_std)
 
@@ -326,7 +329,7 @@ class MultiSWAGPicker(BaseMultiSWAGPicker):
         h5_outfile = os.path.join(
             outfile_pref, f"corrections.{self.phase.lower()}Arrivals.{region}.h5"
         )
-        logger.info("Writing", csv_outfile, h5_outfile)
+        logger.info(f"Writing {csv_outfile} and {h5_outfile}")
 
         meta_df.to_csv(csv_outfile, index=False, float_format="%0.6f")
         with h5py.File(h5_outfile, "w") as f:
@@ -440,15 +443,21 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
         lb, ub = self._get_lb_ub_from_percent(percent)
         return self.get_calibrated_pick_bounds(lb, ub)
 
-    def format_and_save(
+    def calibrate_and_save(
         self, pick_source_ids, ensemble_outputs, ci_percents, start_date, end_date
     ):
 
+        t0 = time.time()
         summary_stats = self.get_summary_stats(ensemble_outputs)
         calibration_results = self.get_multiple_cis(
-            self.cal_loc_type, self.cal_scale_type, ci_percents
+            summary_stats[self.cal_loc_type],
+            summary_stats[self.cal_scale_type],
+            ci_percents,
         )
+        t1 = time.time()
+        logger.debug(f"Total time calibrating and computing stats: {t1-t0:0.2f} s")
 
+        t0 = time.time()
         self.db_conn.save_corrections(
             pick_source_ids,
             ensemble_outputs,
@@ -458,6 +467,8 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
             end_date,
             on_event=logger.debug,
         )
+        t1 = time.time()
+        logger.debug(f"Total time saving corrections: {t1-t0:0.2f} s")
 
     def get_summary_stats(self, predictions):
         results = self.trim_dists(predictions)
@@ -490,7 +501,7 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
         # Compute trimmed means and residuals
         trimmed_means = mx.mean(axis=1).data
         # Compute trimmed medians
-        trimmed_medians = np.ma.median(mx, axis=1)
+        trimmed_medians = np.ma.median(mx, axis=1).data
 
         results = {
             "trim_std": trimmed_stds,
