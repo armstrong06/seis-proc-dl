@@ -833,6 +833,8 @@ class SwagPickerDBConnection:
         start,
         end,
         wf_source_list,
+        padding,
+        on_event=None,
     ):
         with self.Session() as session:
             with session.begin():
@@ -847,6 +849,8 @@ class SwagPickerDBConnection:
                     end=end,
                     sources=wf_source_list,
                     include_multiple_wf_sources=False,
+                    pad_samples=padding,
+                    on_event=on_event,
                 )
 
     def save_corrections(

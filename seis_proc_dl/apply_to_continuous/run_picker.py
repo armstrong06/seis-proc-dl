@@ -21,6 +21,12 @@ argParser.add_argument(
     default=400,
 )
 argParser.add_argument(
+    "--pad",
+    type=int,
+    help="The duration (in samples) of padding to add to each end of the waveform window when processing",
+    default=100,
+)
+argParser.add_argument(
     "--start",
     type=str,
     help="The start date in yyyy-mm-dd format",
@@ -192,6 +198,7 @@ end_date = datetime.strptime(args.end, "%Y-%m-%d")
 
 assert end_date > start_date, "end_date should be larger than start_date"
 assert args.dur > 0, "waveform duration (--dur) must be > 0"
+assert args.pad >= 0, "pad should be >= 0"
 
 for ci in args.cred_ivls:
     assert ci > 0 and ci < 100, "credible interval must be > 0 and < 100"
@@ -238,6 +245,7 @@ ids, data_loader = sp.torch_loader_from_db(
     start_date=start_date,
     end_date=end_date,
     wf_source_list=args.sources,
+    padding=args.pad
 )
 
 # Load the training data for bn_updates:q

@@ -390,6 +390,7 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
         start_date,
         end_date,
         wf_source_list,
+        padding=0,
     ):
 
         if self.phase == "S":
@@ -406,6 +407,8 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
             start=start_date,
             end=end_date,
             wf_source_list=wf_source_list,
+            padding=padding,
+            on_event=logger.info,
         )
 
         dset = Dset(X)
@@ -513,7 +516,7 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
 
         return results
 
-    def process_3c_S(self, wfs, desired_sampling_rate=100, normalize=True):
+    def process_3c_S(self, wfs, padding, desired_sampling_rate=100, normalize=True):
         """Process 3C S data using pyuussmlmodels.Pickers.CNNThreeComponentS.Preprocessing
         Args:
             wfs (np.array): Waveform to process (S, 3)
@@ -536,12 +539,15 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
         processed[:, 1] = proc_n
         processed[:, 2] = proc_z
 
+        if padding > 0:
+            processed = processed[padding:-padding, :]
+
         if normalize:
             processed = self.normalize_example(processed)
 
         return processed
 
-    def process_1c_P(self, wf, desired_sampling_rate=100, normalize=True):
+    def process_1c_P(self, wf, padding, desired_sampling_rate=100, normalize=True):
         """Wrapper around pyuussmlmodels 1C UNet preprocessing function for use in format_continuous_for_unet.
 
         Args:
@@ -556,6 +562,9 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
         processed = processor.process(wf[:, 0], sampling_rate=desired_sampling_rate)[
             :, None
         ]
+
+        if padding > 0:
+            processed = processed[padding:-padding, :]
 
         if normalize:
             processed = self.normalize_example(processed)
