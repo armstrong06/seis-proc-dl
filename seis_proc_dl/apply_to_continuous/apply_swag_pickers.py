@@ -391,6 +391,7 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
         end_date,
         wf_source_list,
         padding=0,
+        no_proc=False,
     ):
 
         if self.phase == "S":
@@ -399,6 +400,9 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
         else:
             proc_fn = self.process_1c_P
             threeC_waveforms = False
+
+        if no_proc:
+            proc_fn = None
 
         ids, X = self.db_conn.get_waveforms(
             n_samples=n_samples,
