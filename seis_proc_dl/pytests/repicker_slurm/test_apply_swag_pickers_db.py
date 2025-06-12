@@ -15,9 +15,9 @@ datetimeformat = "%Y-%m-%dT%H:%M:%S.%f"
 
 @pytest.fixture
 def mock_pytables_config():
-    print(os.getcwd())
     d = "/uufs/chpc.utah.edu/common/home/u1072028/PycharmProjects/seis_proc_dl/seis_proc_dl/pytests/repicker_slurm/pytables_outputs"
-    shutil.rmtree(d)
+    if os.path.exists(d):
+        shutil.rmtree(d)
     with mock.patch(
         "seis_proc_db.pytables_backend.HDF_BASE_PATH",
         d,
@@ -61,7 +61,7 @@ def db_session(monkeypatch):
     connection.close()
 
 
-examples_dir = "/uufs/chpc.utah.edu/common/home/u1072028/PycharmProjects/seis_proc_dl/seis_proc_dl/pytests/example_files/repicker_slurm"
+examples_dir = "/uufs/chpc.utah.edu/common/home/u1072028/PycharmProjects/seis_proc_dl/seis_proc_dl/pytests/example_files/repicker_test_exs"
 
 
 @pytest.fixture
@@ -164,8 +164,8 @@ def db_session_with_waveform_info(db_session, mock_pytables_config):
 
         # TODO: I should load the examples from Ben...
 
-        with h5py.File("{examples_dir}YSnoiseZ_4s_1ex.h5") as f:
-            p_data = f["X"][0, :]
+        with h5py.File(f"{examples_dir}/YSnoiseZ_4s_1ex.h5") as f:
+            p_data = f["X"][0, :, 0]
 
         assert p_data.shape == (400,)
         insert_wf_info("P", p1, "HHZ", wf_source1, p_data)
@@ -197,7 +197,6 @@ def method_dicts_ex():
 
 
 def test_apply_noise(db_session_with_waveform_info, method_dicts_ex):
-    examples_dir = "/uufs/chpc.utah.edu/common/home/u1072028/PycharmProjects/seis_proc_dl/seis_proc_dl/pytests/example_files"
     is_p = True
     device = "cuda:0"
     train_path = "/uufs/chpc.utah.edu/common/home/koper-group3/alysha/swag_info"
@@ -205,14 +204,11 @@ def test_apply_noise(db_session_with_waveform_info, method_dicts_ex):
     train_bs = 1024
     train_n_workers = 4
     shuffle_train = False
-    data_file = "YSnoiseZ_4s_1ex.h5"
-    outfile = "./YSnoiseZ_4s_1ex_spdl_preds"
+    outfile = "/uufs/chpc.utah.edu/common/home/u1072028/PycharmProjects/seis_proc_dl/seis_proc_dl/pytests/repicker_slurm/YSnoiseZ_4s_1ex_spdl_db_preds"
     # data_file = "uuss_NGB_4s_1ex.h5"
     # outfile = "./uuss_NGB_4s_1ex_spdl_preds"
-    data_path = f"{examples_dir}/repicker_test_exs"
     data_bs = 1
     data_n_workers = 1
-    n_data_examples = -1
     model_path = "/uufs/chpc.utah.edu/common/home/koper-group3/alysha/selected_models"
     swag_model1 = "pPicker_swag60_seed1.pt"
     swag_model2 = "pPicker_swag60_seed2.pt"
@@ -233,9 +229,9 @@ def test_apply_noise(db_session_with_waveform_info, method_dicts_ex):
         device=device,
     )
     repicker_dict, cal_dict = method_dicts_ex
+    session, ids = db_session_with_waveform_info
     sp.start_db_conn(
-        repicker_dict=repicker_dict,
-        cal_dict=cal_dict,
+        repicker_dict=repicker_dict, cal_dict=cal_dict, session_factory=lambda: session
     )
     # Load the training data for bn_updates
     train_loader = sp.torch_loader(
@@ -256,6 +252,7 @@ def test_apply_noise(db_session_with_waveform_info, method_dicts_ex):
         padding=0,
         no_proc=True,
     )
+    assert len(data_loader.dataset) == 1, "incorrect number of waveforms loaded"
     # Load the MultiSWAG ensemble
     ensemble = sp.load_swag_ensemble(
         swag_model1,
@@ -266,9 +263,11 @@ def test_apply_noise(db_session_with_waveform_info, method_dicts_ex):
         K,
         swag_model_dir=model_path,
     )
-    # new_preds = sp.apply_picker(ensemble, data_loader, train_loader, N)
+    new_preds = sp.apply_picker(ensemble, data_loader, train_loader, N)
 
-    # np.save(outfile, new_preds)
+    np.save(outfile, new_preds)
 
-    # assert np.std(new_preds > 0.3), "std for noise is smaller than expected"
-    # assert np.sum(abs(new_preds[0, :]) == 0.75) > 0, "expected some predictions at /pm 0.75"
+    assert np.std(new_preds > 0.3), "std for noise is smaller than expected"
+    assert (
+        np.sum(abs(new_preds[0, :]) == 0.75) > 0
+    ), "expected some predictions at /pm 0.75"
