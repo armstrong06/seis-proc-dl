@@ -1,6 +1,7 @@
 import pytest
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import engine
+
+# from sqlalchemy import engine
 from sqlalchemy import inspect
 from datetime import datetime, timedelta
 from copy import deepcopy
@@ -26,7 +27,8 @@ TestSessionFactory = sessionmaker(bind=engine, expire_on_commit=False)
 @pytest.fixture
 def mock_pytables_config():
     d = "./pytests/pytables_outputs"
-    shutil.rmtree(d)
+    if os.path.exists(d):
+        shutil.rmtree(d)
     with mock.patch(
         "seis_proc_db.pytables_backend.HDF_BASE_PATH",
         d,
@@ -2422,12 +2424,16 @@ class TestApplyDetectorDBPytables:
 
         finally:
             applier.db_conn.close_open_pytables()
-            os.remove(applier.db_conn.detout_storage_P.file_path)
-            os.remove(applier.db_conn.detout_storage_S.file_path)
-            for cid, cstore in applier.db_conn.waveform_storage_dict_P.items():
-                os.remove(cstore.file_path)
-            for cid, cstore in applier.db_conn.waveform_storage_dict_S.items():
-                os.remove(cstore.file_path)
+            if applier.db_conn.detout_storage_P is not None:
+                os.remove(applier.db_conn.detout_storage_P.file_path)
+            if applier.db_conn.detout_storage_S is not None:
+                os.remove(applier.db_conn.detout_storage_S.file_path)
+            if applier.db_conn.waveform_storage_dict_P is not None:
+                for cid, cstore in applier.db_conn.waveform_storage_dict_P.items():
+                    os.remove(cstore.file_path)
+            if applier.db_conn.waveform_storage_dict_S is not None:
+                for cid, cstore in applier.db_conn.waveform_storage_dict_S.items():
+                    os.remove(cstore.file_path)
 
     def test_apply_to_multiple_days_dumb(self, db_session, mock_pytables_config):
         session, _ = db_session
@@ -2451,9 +2457,11 @@ class TestApplyDetectorDBPytables:
                 assert not cstore._is_open, "waveform storage should have been closed"
         finally:
             applier.db_conn.close_open_pytables()
-            os.remove(applier.db_conn.detout_storage_P.file_path)
-            for cid, cstore in applier.db_conn.waveform_storage_dict_P.items():
-                os.remove(cstore.file_path)
+            if applier.db_conn.detout_storage_P is not None:
+                os.remove(applier.db_conn.detout_storage_P.file_path)
+            if applier.db_conn.waveform_storage_dict_P is not None:
+                for cid, cstore in applier.db_conn.waveform_storage_dict_P.items():
+                    os.remove(cstore.file_path)
 
     def test_save_daily_results_in_db_1C_gaps_empty(
         self, db_session, contdatainfo_ex, mock_pytables_config
@@ -2497,9 +2505,11 @@ class TestApplyDetectorDBPytables:
             ), "detout storage should have 1 entry"
         finally:
             applier.db_conn.close_open_pytables()
-            os.remove(applier.db_conn.detout_storage_P.file_path)
-            for cid, cstore in applier.db_conn.waveform_storage_dict_P.items():
-                os.remove(cstore.file_path)
+            if applier.db_conn.detout_storage_P is not None:
+                os.remove(applier.db_conn.detout_storage_P.file_path)
+            if applier.db_conn.waveform_storage_dict_P is not None:
+                for cid, cstore in applier.db_conn.waveform_storage_dict_P.items():
+                    os.remove(cstore.file_path)
 
     def test_save_daily_results_in_db_1C_error(
         self, db_session, contdatainfo_ex, mock_pytables_config
