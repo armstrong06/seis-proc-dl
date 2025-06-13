@@ -205,7 +205,7 @@ class DetectorDBConnection:
                     selected_channels[0].seed_code,
                 )
 
-        self.channel_info = ChannelInfo(selected_channels, total_ndays)
+                self.channel_info = ChannelInfo(selected_channels, total_ndays)
         return True
 
     def save_data_info(self, date, metadata_dict, error=None):
