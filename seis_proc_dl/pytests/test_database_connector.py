@@ -2163,6 +2163,17 @@ class TestApplyDetectorDB:
             "WY", "YWB", "", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
         )
 
+    def test_apply_to_multiple_days_updated_start_no_data(self, db_session, mock_pytables_config):
+        """Case when the original start date/ndays must be altered given the channel operating days, 
+        but there is no data on the first day of operation. """
+        session, _ = db_session
+        applier = ApplyDetector(
+            3, apply_detector_config, session_factory=lambda: session
+        )
+        applier.apply_to_multiple_days(
+            "WY", "YMV", "01", "HH", 2023, 8, 1, 15, debug_N_examples=256
+        )
+
     def test_save_daily_results_in_db_1C_gaps_empty(
         self, db_session_with_3c_stat_loaded, contdatainfo_ex, mock_pytables_config
     ):

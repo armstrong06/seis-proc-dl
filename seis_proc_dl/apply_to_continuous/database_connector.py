@@ -173,7 +173,7 @@ class DetectorDBConnection:
         return True
 
     def validate_channels_for_date(self, date):
-        if date >= self.channel_info.ondate and (
+        if self.channel_info is not None and date >= self.channel_info.ondate and (
             self.channel_info.offdate is None or date <= self.channel_info.offdate
         ):
             return True
@@ -184,7 +184,7 @@ class DetectorDBConnection:
         with self.Session() as session:
             with session.begin():
                 # Get the Station object and the Channel objects for the appropriate date
-                _, selected_channels = services.get_operating_channels_by_station_name(
+                selected_station, selected_channels = services.get_operating_channels_by_station_name(
                     session,
                     self.station_name,
                     self.seed_code,
@@ -196,6 +196,9 @@ class DetectorDBConnection:
                 if selected_channels is None or len(selected_channels) == 0:
                     self.channel_info = ChannelInfo([], 0)
                     return False
+
+                if self.station_id is None:
+                    self.station_id = selected_station.id
 
                 total_ndays = services.get_similar_channel_total_ndays(
                     session,
