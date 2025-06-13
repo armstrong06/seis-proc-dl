@@ -28,7 +28,10 @@ TestSessionFactory = sessionmaker(bind=engine, expire_on_commit=False)
 def mock_pytables_config():
     d = "./pytests/pytables_outputs"
     if os.path.exists(d):
-        shutil.rmtree(d)
+        try:
+            shutil.rmtree(d)
+        except Exception as e:
+            print(f"Ran into error {e} when trying to remove test pytables outdir")
     with mock.patch(
         "seis_proc_db.pytables_backend.HDF_BASE_PATH",
         d,
@@ -156,26 +159,103 @@ def detections_ex():
     return deepcopy([d1, d2, d3, d4])
 
 
-class TestDetectorDBConnection:
-    @pytest.fixture
-    def db_session_with_3c_stat_loaded(self, db_session):
-        session, patch_session = db_session  # Unpack session & patch function
-        db_conn = DetectorDBConnection(3)  # Create instance
+@pytest.fixture()
+def stat_ex():
+    return deepcopy(
+        {
+            "ondate": datetime.strptime("2003-09-09T00:00:00.00", datetimeformat),
+            "offdate": datetime.strptime("2013-03-31T23:59:59.00", datetimeformat),
+            "net": "JK",
+            "sta": "TST",
+            "lat": 44.7155,
+            "lon": -110.67917,
+            "elev": 2336,
+        }
+    )
 
-        patch_session(db_conn)  # Patch `self.Session` on the instance
-        start, end = db_conn.get_channel_dates(
+
+@pytest.fixture()
+def channel_ex_3c():
+    # Meant to mimic WY.YNR..HH channels
+    d = {
+        "loc": "",
+        "samp_rate": 100.0,
+        "clock_drift": 1e-5,
+        "sensor_desc": "Nanometrics something or other",
+        "sensit_units": "M/S",
+        "sensit_val": 9e9,
+        "sensit_freq": 5,
+        "lat": 44.7155,
+        "lon": -110.67917,
+        "elev": 2336,
+        "depth": 100,
+        "azimuth": 90,
+        "dip": -90,
+        "offdate": None,
+        "overall_gain_vel": None,
+    }
+
+    s1 = datetime.strptime("2003-09-09T00:00:00.00", datetimeformat)
+    e1 = datetime.strptime("2010-08-20T23:59:59.00", datetimeformat)
+    s2 = datetime.strptime("2010-08-21T00:00:00.00", datetimeformat)
+    e2 = datetime.strptime("2011-09-10T23:59:59.00", datetimeformat)
+    s3 = datetime.strptime("2011-09-11T00:00:00.00", datetimeformat)
+    e3 = datetime.strptime("2013-03-31T23:59:59.00", datetimeformat)
+    chan_dict_list = []
+    for start, end in [(s1, e1), (s2, e2), (s3, e3)]:
+        for seed_code in ["HHZ", "HHE", "HHN"]:
+            chan = deepcopy(d)
+            chan["seed_code"] = seed_code
+            chan["ondate"] = start
+            chan["offdate"] = end
+            chan_dict_list.append(chan)
+
+    return deepcopy(chan_dict_list)
+
+
+@pytest.fixture
+def db_session_with_3c_stat_loaded(db_session, stat_ex, channel_ex_3c):
+    session, patch_session = db_session  # Unpack session & patch function
+
+    stat_dict = stat_ex
+    chan_dict_list = channel_ex_3c
+
+    stat = services.insert_station(session, **stat_dict)
+    session.flush()
+
+    for chan in chan_dict_list:
+        chan["sta_id"] = stat.id
+
+    services.insert_channels(session, chan_dict_list)
+    session.commit()
+
+    db_conn = DetectorDBConnection(3)  # Create instance
+
+    patch_session(db_conn)  # Patch `self.Session` on the instance
+
+    start, end = db_conn.get_channel_dates(
             datetime.strptime("2011-09-10T00:00:00.00", datetimeformat),
-            "WY",
-            "YNR",
+            "JK",
+            "TST",
             "",
             "HH",
         )
 
-        return session, db_conn, start, end
+    return session, db_conn
+
+
+class TestDetectorDBConnection:
 
     def test_get_channels(self, db_session_with_3c_stat_loaded):
-        session, db_conn, start, end = db_session_with_3c_stat_loaded
+        session, db_conn = db_session_with_3c_stat_loaded
 
+        start, end = db_conn.get_channel_dates(
+            datetime.strptime("2011-09-10T00:00:00.00", datetimeformat),
+            "JK",
+            "TST",
+            "",
+            "HH",
+        )
         assert start == datetime.strptime(
             "2003-09-09T00:00:00.00", datetimeformat
         ), "invalid start"
@@ -247,7 +327,7 @@ class TestDetectorDBConnection:
     @pytest.fixture
     def db_session_with_detection_methods(self, db_session_with_3c_stat_loaded):
         # Unpack session & patch function
-        session, db_conn, _, _ = db_session_with_3c_stat_loaded
+        session, db_conn = db_session_with_3c_stat_loaded
 
         db_conn.add_waveform_source(
             "TEST-extracted", "Extracted from DataLoader.continuous_data"
@@ -288,19 +368,19 @@ class TestDetectorDBConnection:
         assert det_method.phase == "S", "invalid phase"
 
     def test_validate_channels_for_date_valid(self, db_session_with_3c_stat_loaded):
-        session, db_conn, start, end = db_session_with_3c_stat_loaded
+        session, db_conn = db_session_with_3c_stat_loaded
         date = datetime.strptime("2011-09-10", dateformat)
         valid = db_conn.validate_channels_for_date(date)
         assert valid, "Returned false"
 
     def test_validate_channels_for_date_invalid(self, db_session_with_3c_stat_loaded):
-        session, db_conn, start, end = db_session_with_3c_stat_loaded
+        session, db_conn = db_session_with_3c_stat_loaded
         date = datetime.strptime("2011-09-11", dateformat)
         valid = db_conn.validate_channels_for_date(date)
         assert not valid, "Returned true"
 
     def test_update_channels_invalid(self, db_session_with_3c_stat_loaded):
-        session, db_conn, start, end = db_session_with_3c_stat_loaded
+        session, db_conn = db_session_with_3c_stat_loaded
         date = datetime.strptime("2013-04-01", dateformat)
         db_conn.update_channels(date)
         assert (
@@ -311,7 +391,7 @@ class TestDetectorDBConnection:
         ), "offdate should not be set, date out of range"
 
     def test_update_channels(self, db_session_with_3c_stat_loaded):
-        session, db_conn, start, end = db_session_with_3c_stat_loaded
+        session, db_conn = db_session_with_3c_stat_loaded
         date = datetime.strptime("2011-09-11", dateformat)
         db_conn.update_channels(date)
         assert db_conn.channel_info.ondate == datetime.strptime(
@@ -322,7 +402,7 @@ class TestDetectorDBConnection:
         ), "invalid ondate"
 
     def test_start_new_day_valid_date(self, db_session_with_3c_stat_loaded):
-        session, db_conn, start, end = db_session_with_3c_stat_loaded
+        session, db_conn = db_session_with_3c_stat_loaded
 
         new_date = datetime.strptime("2011-09-10", dateformat)
         db_conn.start_new_day(new_date)
@@ -337,7 +417,7 @@ class TestDetectorDBConnection:
         ), "invalid channel offdate"
 
     def test_start_new_day_invalid_date(self, db_session_with_3c_stat_loaded):
-        session, db_conn, start, end = db_session_with_3c_stat_loaded
+        session, db_conn = db_session_with_3c_stat_loaded
 
         new_date = datetime.strptime("2011-09-11", dateformat)
         db_conn.start_new_day(new_date)
@@ -352,7 +432,7 @@ class TestDetectorDBConnection:
         ), "invalid channel offdate"
 
     def test_start_new_day_out_of_range(self, db_session_with_3c_stat_loaded):
-        session, db_conn, start, end = db_session_with_3c_stat_loaded
+        session, db_conn = db_session_with_3c_stat_loaded
 
         new_date = datetime.strptime("2013-04-01", dateformat)
         db_conn.start_new_day(new_date)
@@ -390,7 +470,7 @@ class TestDetectorDBConnection:
         ), "invalid proc_start"
 
     def test_save_data_info_error(self, db_session_with_3c_stat_loaded):
-        session, db_conn, start, end = db_session_with_3c_stat_loaded
+        session, db_conn = db_session_with_3c_stat_loaded
         new_date = datetime.strptime("2011-09-10", dateformat)
         metadata_dict = None
         error = "no_data"
@@ -412,7 +492,7 @@ class TestDetectorDBConnection:
     def test_save_data_info_insufficient_data(
         self, db_session_with_3c_stat_loaded, contdatainfo_ex
     ):
-        session, db_conn, start, end = db_session_with_3c_stat_loaded
+        session, db_conn = db_session_with_3c_stat_loaded
         new_date, metadata_dict = contdatainfo_ex
         error = "insufficient_data"
         db_conn.save_data_info(new_date, metadata_dict, error=error)
@@ -1066,7 +1146,7 @@ class TestDetectorDBConnection:
             file_name = detout_storage.file_name
             # Check that the filename is as would be expected
             assert (
-                file_name == f"WY.YNR..HH.P.3C.detmethod{detmethod_id:02d}.h5"
+                file_name == f"JK.TST..HH.P.3C.detmethod{detmethod_id:02d}.h5"
             ), "file name is not as expected"
             # Check that the file was created
             assert os.path.exists(detout_storage.file_path), "the file was not created"
@@ -1077,7 +1157,7 @@ class TestDetectorDBConnection:
             assert table.name == "dldetector_output", "the table name is incorrect"
             assert table.title == "DL detector output", "the table title is incorrect"
             # Check table attributes
-            assert table.attrs.sta == "YNR", "the table sta attr is incorrect"
+            assert table.attrs.sta == "TST", "the table sta attr is incorrect"
             assert (
                 table.attrs.seed_code == "HH"
             ), "the table seed_code attr is incorrect"
@@ -1167,7 +1247,7 @@ class TestDetectorDBConnection:
             ), "data incorrect"
             assert (
                 db_conn.detout_storage_P.file_name
-                == f"WY.YNR..HH.P.3C.detmethod{detout.method_id:02d}.h5"
+                == f"JK.TST..HH.P.3C.detmethod{detout.method_id:02d}.h5"
             ), "file name is not as expected"
         finally:
             # Clean up
@@ -1205,7 +1285,7 @@ class TestDetectorDBConnection:
             ), "data incorrect"
             assert (
                 db_conn.detout_storage_S.file_name
-                == f"WY.YNR..HH.S.3C.detmethod{detout.method_id:02d}.h5"
+                == f"JK.TST..HH.S.3C.detmethod{detout.method_id:02d}.h5"
             ), "file name is not as expected"
         finally:
             # Clean up
@@ -1888,9 +1968,13 @@ class TestApplyDetectorDB:
         assert applier.min_gap_sep_seconds == 5
 
     def test_save_daily_results_in_db_1C(
-        self, db_session, contdatainfo_ex, simple_obspy_gaps_ex, mock_pytables_config
+        self,
+        db_session_with_3c_stat_loaded,
+        contdatainfo_ex,
+        simple_obspy_gaps_ex,
+        mock_pytables_config,
     ):
-        session, _ = db_session
+        session, _ = db_session_with_3c_stat_loaded
         applier = ApplyDetector(
             1, apply_detector_config, session_factory=lambda: session
         )
@@ -1907,7 +1991,7 @@ class TestApplyDetectorDB:
         p_post_probs[56000] = 56
         p_post_probs[75000] = 45
 
-        applier.db_conn.get_channel_dates(date, "WY", "YNR", "", "HHZ")
+        applier.db_conn.get_channel_dates(date, "JK", "TST", "", "HHZ")
 
         applier.save_daily_results_in_db(
             date, continuous_data, metadata, gaps, error, p_post_probs
@@ -1961,9 +2045,13 @@ class TestApplyDetectorDB:
             assert len(wf) == 1, "invalid wf size"
 
     def test_save_daily_results_in_db_3C(
-        self, db_session, contdatainfo_ex, simple_obspy_gaps_ex, mock_pytables_config
+        self,
+        db_session_with_3c_stat_loaded,
+        contdatainfo_ex,
+        simple_obspy_gaps_ex,
+        mock_pytables_config,
     ):
-        session, _ = db_session
+        session, _ = db_session_with_3c_stat_loaded
         applier = ApplyDetector(
             3, apply_detector_config, session_factory=lambda: session
         )
@@ -1987,7 +2075,7 @@ class TestApplyDetectorDB:
         s_post_probs[56005] = 55
         s_post_probs[75005] = 75
 
-        applier.db_conn.get_channel_dates(date, "WY", "YNR", "", "HHZ")
+        applier.db_conn.get_channel_dates(date, "JK", "TST", "", "HHZ")
 
         applier.save_daily_results_in_db(
             date,
@@ -2076,9 +2164,9 @@ class TestApplyDetectorDB:
         )
 
     def test_save_daily_results_in_db_1C_gaps_empty(
-        self, db_session, contdatainfo_ex, mock_pytables_config
+        self, db_session_with_3c_stat_loaded, contdatainfo_ex, mock_pytables_config
     ):
-        session, _ = db_session
+        session, _ = db_session_with_3c_stat_loaded
         applier = ApplyDetector(
             1, apply_detector_config, session_factory=lambda: session
         )
@@ -2095,7 +2183,7 @@ class TestApplyDetectorDB:
         p_post_probs[56000] = 50
         p_post_probs[75000] = 45
 
-        applier.db_conn.get_channel_dates(date, "WY", "YNR", "", "HHZ")
+        applier.db_conn.get_channel_dates(date, "JK", "TST", "", "HHZ")
 
         applier.save_daily_results_in_db(
             date, continuous_data, metadata, gaps, error, p_post_probs
@@ -2114,9 +2202,9 @@ class TestApplyDetectorDB:
         ), "the detector output should not be set"
 
     def test_save_daily_results_in_db_1C_error(
-        self, db_session, contdatainfo_ex, mock_pytables_config
+        self, db_session_with_3c_stat_loaded, contdatainfo_ex, mock_pytables_config
     ):
-        session, _ = db_session
+        session, _ = db_session_with_3c_stat_loaded
         applier = ApplyDetector(
             1, apply_detector_config, session_factory=lambda: session
         )
@@ -2128,7 +2216,7 @@ class TestApplyDetectorDB:
         continuous_data = None
         p_post_probs = None
 
-        applier.db_conn.get_channel_dates(date, "WY", "YNR", "", "HHZ")
+        applier.db_conn.get_channel_dates(date, "JK", "TST", "", "HHZ")
 
         applier.save_daily_results_in_db(
             date, continuous_data, None, gaps, error, p_post_probs
@@ -2188,9 +2276,13 @@ class TestApplyDetectorDBPytables:
         assert applier.use_pytables, "use_pytables not set"
 
     def test_save_daily_results_in_db_1C(
-        self, db_session, contdatainfo_ex, simple_obspy_gaps_ex, mock_pytables_config
+        self,
+        db_session_with_3c_stat_loaded,
+        contdatainfo_ex,
+        simple_obspy_gaps_ex,
+        mock_pytables_config,
     ):
-        session, _ = db_session
+        session, _ = db_session_with_3c_stat_loaded
         applier = ApplyDetector(
             1, apply_detector_config_pytables, session_factory=lambda: session
         )
@@ -2207,7 +2299,7 @@ class TestApplyDetectorDBPytables:
         p_post_probs[56000] = 56
         p_post_probs[75000] = 45
 
-        applier.db_conn.get_channel_dates(date, "WY", "YNR", "", "HHZ")
+        applier.db_conn.get_channel_dates(date, "JK", "TST", "", "HHZ")
         try:
             applier.save_daily_results_in_db(
                 date, continuous_data, metadata, gaps, error, p_post_probs
@@ -2285,9 +2377,13 @@ class TestApplyDetectorDBPytables:
                     os.remove(cstore.file_path)
 
     def test_save_daily_results_in_db_3C(
-        self, db_session, contdatainfo_ex, simple_obspy_gaps_ex, mock_pytables_config
+        self,
+        db_session_with_3c_stat_loaded,
+        contdatainfo_ex,
+        simple_obspy_gaps_ex,
+        mock_pytables_config,
     ):
-        session, _ = db_session
+        session, _ = db_session_with_3c_stat_loaded
         applier = ApplyDetector(
             3, apply_detector_config_pytables, session_factory=lambda: session
         )
@@ -2311,7 +2407,7 @@ class TestApplyDetectorDBPytables:
         s_post_probs[56000] = 55
         s_post_probs[75000] = 75
 
-        applier.db_conn.get_channel_dates(date, "WY", "YNR", "", "HH")
+        applier.db_conn.get_channel_dates(date, "JK", "TST", "", "HH")
         try:
             applier.save_daily_results_in_db(
                 date, continuous_data, metadata, gaps, error, p_post_probs, s_post_probs
@@ -2464,9 +2560,9 @@ class TestApplyDetectorDBPytables:
                     os.remove(cstore.file_path)
 
     def test_save_daily_results_in_db_1C_gaps_empty(
-        self, db_session, contdatainfo_ex, mock_pytables_config
+        self, db_session_with_3c_stat_loaded, contdatainfo_ex, mock_pytables_config
     ):
-        session, _ = db_session
+        session, _ = db_session_with_3c_stat_loaded
         applier = ApplyDetector(
             1, apply_detector_config_pytables, session_factory=lambda: session
         )
@@ -2483,7 +2579,7 @@ class TestApplyDetectorDBPytables:
         p_post_probs[56000] = 50
         p_post_probs[75000] = 45
 
-        applier.db_conn.get_channel_dates(date, "WY", "YNR", "", "HHZ")
+        applier.db_conn.get_channel_dates(date, "JK", "TST", "", "HHZ")
         try:
             applier.save_daily_results_in_db(
                 date, continuous_data, metadata, gaps, error, p_post_probs
@@ -2512,9 +2608,9 @@ class TestApplyDetectorDBPytables:
                     os.remove(cstore.file_path)
 
     def test_save_daily_results_in_db_1C_error(
-        self, db_session, contdatainfo_ex, mock_pytables_config
+        self, db_session_with_3c_stat_loaded, contdatainfo_ex, mock_pytables_config
     ):
-        session, _ = db_session
+        session, _ = db_session_with_3c_stat_loaded
         applier = ApplyDetector(
             1, apply_detector_config_pytables, session_factory=lambda: session
         )
@@ -2526,7 +2622,7 @@ class TestApplyDetectorDBPytables:
         continuous_data = None
         p_post_probs = None
 
-        applier.db_conn.get_channel_dates(date, "WY", "YNR", "", "HHZ")
+        applier.db_conn.get_channel_dates(date, "JK", "TST", "", "HHZ")
 
         applier.save_daily_results_in_db(
             date, continuous_data, None, gaps, error, p_post_probs
