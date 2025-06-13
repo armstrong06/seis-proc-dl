@@ -103,13 +103,15 @@ class TestApplyDetector:
 
     def test_apply_to_file_day_1c(self):
         applier = apply_detectors.ApplyDetector(1, apply_detector_config)
-        succeeded, _, _ = applier.apply_to_one_file(
+        succeeded, error, _, _ = applier.apply_to_one_file(
             [
                 f"{examples_dir}/WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
             ],
             debug_N_examples=256,
         )
+        print(error)
         assert succeeded
+        assert error is None
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         assert os.path.exists(expected_p_probs_file)
         probs_st = obspy.read(expected_p_probs_file)
@@ -134,13 +136,14 @@ class TestApplyDetector:
         apply_detector_config_fail["dataloader"]["min_signal_percent"] = 99.5
 
         applier = apply_detectors.ApplyDetector(1, apply_detector_config_fail)
-        succeeded, _, _ = applier.apply_to_one_file(
+        succeeded, error, _, _ = applier.apply_to_one_file(
             [
                 f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
             ],
             debug_N_examples=256,
         )
         assert not succeeded
+        assert error == "insufficient_data"
         # I updated the function to not reset the dataloader explicitly
         assert applier.dataloader.metadata is not None
         assert applier.dataloader.gaps is not None
@@ -387,13 +390,14 @@ class TestApplyDetector:
 
     def test_apply_to_file_day_1c_save_npz(self):
         applier = apply_detectors.ApplyDetector(1, apply_detector_config_npz)
-        succeeded, _, _ = applier.apply_to_one_file(
+        succeeded, error, _, _ = applier.apply_to_one_file(
             [
                 f"{examples_dir}/WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
             ],
             debug_N_examples=256,
         )
         assert succeeded
+        assert error is None
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.npz"
         assert os.path.exists(expected_p_probs_file)
         data = np.load(expected_p_probs_file)["probs"]
@@ -416,13 +420,14 @@ class TestApplyDetector:
         no_limit_config = deepcopy(apply_detector_config)
         no_limit_config["unet"]["min_torch_threads"] = -1
         applier = apply_detectors.ApplyDetector(1, no_limit_config)
-        succeeded, _, _ = applier.apply_to_one_file(
+        succeeded, error, _, _ = applier.apply_to_one_file(
             [
                 f"{examples_dir}/WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
             ],
             debug_N_examples=256,
         )
         assert succeeded
+        assert error is None
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         assert os.path.exists(expected_p_probs_file)
         probs_st = obspy.read(expected_p_probs_file)
@@ -449,8 +454,9 @@ class TestApplyDetector:
             f"{examples_dir}/WY.YMR..HHN__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
             f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
         ]
-        succeeded, _, _ = applier.apply_to_one_file(files, debug_N_examples=256)
+        succeeded, error, _, _ = applier.apply_to_one_file(files, debug_N_examples=256)
         assert succeeded
+        assert error is None
         # P Probs - 3c name should have E or 1 channel
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YMR..HHE__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         assert os.path.exists(expected_p_probs_file)
@@ -483,8 +489,9 @@ class TestApplyDetector:
             f"{examples_dir}/WY.YMR..HHN__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
             f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
         ]
-        succeeded, _, _ = applier.apply_to_one_file(files, debug_N_examples=256)
+        succeeded, error, _, _ = applier.apply_to_one_file(files, debug_N_examples=256)
         assert succeeded
+        assert error is None
         # P Probs - 3c name should have E or 1 channel
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YMR..HHE__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.npz"
         assert os.path.exists(expected_p_probs_file)
@@ -1061,8 +1068,9 @@ class TestDataLoader:
         fileZ = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
 
         dl = apply_detectors.DataLoader()
-        loaded = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
+        loaded, error = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
         assert loaded
+        assert error is None
         assert dl.continuous_data.shape == (8640000, 3)
         assert len(dl.metadata.keys()) == 16
         assert len(dl.gaps) == 3
@@ -1082,8 +1090,9 @@ class TestDataLoader:
         fileZ = f"{examples_dir}/US.LKWY.00.BHZ__100hz__2022-10-06T00:00:00.000000Z__2022-10-07T00:00:00.000000Z.mseed"
 
         dl = apply_detectors.DataLoader()
-        loaded = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
+        loaded, error = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
         assert loaded
+        assert error is None
         assert dl.continuous_data.shape == (8640000, 3)
         assert len(dl.metadata.keys()) == 16
         assert len(dl.gaps) == 3
@@ -1094,8 +1103,9 @@ class TestDataLoader:
         fileZ = f"{examples_dir}/US.LKWY.00.BHZ__100hz__2022-10-07T00:00:00.000000Z__2022-10-08T00:00:00.000000Z.mseed"
 
         dl = apply_detectors.DataLoader()
-        loaded = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
+        loaded, error = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
         assert loaded
+        assert error is None
         assert dl.continuous_data.shape == (8640000, 3)
         assert len(dl.metadata.keys()) == 16
         assert len(dl.gaps) == 0
@@ -1182,8 +1192,9 @@ class TestDataLoader:
         fileZ = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
 
         dl = apply_detectors.DataLoader()
-        loaded = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=99.5)
+        loaded, error = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=99.5)
         assert not loaded
+        assert error == "insufficient_data"
         assert dl.continuous_data is None
         # Updated code keeps this info so it can be written to disk (including all gaps)
         assert dl.metadata is not None
@@ -1197,8 +1208,9 @@ class TestDataLoader:
         file = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
 
         dl = apply_detectors.DataLoader()
-        loaded = dl.load_1c_data(file, min_signal_percent=0)
+        loaded, error = dl.load_1c_data(file, min_signal_percent=0)
         assert loaded
+        assert error is None
         assert dl.continuous_data.shape == (8640000, 1)
         assert len(dl.metadata.keys()) == 16
         assert len(dl.gaps) == 1
@@ -1208,8 +1220,9 @@ class TestDataLoader:
         file = f"{examples_dir}/WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
 
         dl = apply_detectors.DataLoader()
-        loaded = dl.load_1c_data(file, min_signal_percent=1)
+        loaded, error = dl.load_1c_data(file, min_signal_percent=1)
         assert not loaded
+        assert error == "insufficient_data"
         assert dl.continuous_data is None
         ## Updated code keeps gap and metadata information so it can be written to disk
         # assert dl.metadata == None
@@ -1220,8 +1233,9 @@ class TestDataLoader:
     def test_reset_loader(self):
         file = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         dl = apply_detectors.DataLoader()
-        loaded = dl.load_1c_data(file, min_signal_percent=0)
+        loaded, error = dl.load_1c_data(file, min_signal_percent=0)
         assert loaded
+        assert error is None
         dl.reset_loader()
         assert dl.continuous_data is None
         assert dl.metadata is None
@@ -1233,12 +1247,14 @@ class TestDataLoader:
         fileZ = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         # Load data succesfully
         dl = apply_detectors.DataLoader(store_N_seconds=10)
-        loaded = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
+        loaded, error = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
         assert loaded
+        assert error is None
         # Try to load data but skip the day because not enough signal
-        loaded = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=99.5)
+        loaded, error = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=99.5)
         # Continuous_data should be none, but gaps and metadata stored to write to disk
         assert not loaded
+        assert error == "insufficient_data"
         assert dl.continuous_data is None
         assert dl.metadata is not None
         assert len(dl.gaps) == 3
@@ -1251,11 +1267,13 @@ class TestDataLoader:
         fileZ = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         # Load data succesfully
         dl = apply_detectors.DataLoader()
-        loaded = dl.load_1c_data(fileZ, min_signal_percent=0)
+        loaded , error = dl.load_1c_data(fileZ, min_signal_percent=0)
         assert loaded
+        assert error is None
         # Try to load data but skip the day because not enough signal
-        loaded = dl.load_1c_data(fileZ, min_signal_percent=99.5)
+        loaded, error = dl.load_1c_data(fileZ, min_signal_percent=99.5)
         assert not loaded
+        assert error == "insufficient_data"
         # Continous_data should be None
         assert dl.continuous_data is None
         # Gaps and metadata are kept so they can be written to disk
@@ -1266,18 +1284,19 @@ class TestDataLoader:
         file1 = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         # Load data succesfully
         dl = apply_detectors.DataLoader(store_N_seconds=10)
-        loaded = dl.load_1c_data(file1, min_signal_percent=0)
+        loaded, error = dl.load_1c_data(file1, min_signal_percent=0)
         previous_endtime = dl.metadata["original_endtime"]
         all_previous_gaps = dl.gaps
 
         # Previous_data should be none until the next day is read in
         assert loaded
+        assert error is None
         assert dl.previous_continuous_data is None
         assert dl.previous_endtime is None
         assert dl.previous_cont_data_gaps is None
 
         file2 = f"{examples_dir}/WY.YMR..HHZ__2002-01-02T00:00:00.000000Z__2002-01-03T00:00:00.000000Z.mseed"
-        loaded = dl.load_1c_data(file2, min_signal_percent=0)
+        loaded, error = dl.load_1c_data(file2, min_signal_percent=0)
         file2_endtime = dl.metadata["original_endtime"]
         file2_enddata = dl.continuous_data[-1000:, :]
         file2_all_previous_gaps = dl.gaps
@@ -1286,6 +1305,7 @@ class TestDataLoader:
 
         saved_previous = dl.previous_continuous_data
         assert loaded
+        assert error is None
         assert dl.previous_continuous_data.shape == (1000, 1)
         assert dl.previous_endtime == previous_endtime
         previous_gaps = list(
@@ -1298,10 +1318,11 @@ class TestDataLoader:
 
         # load file2 without prepending previous so I can make sure the signals are the same
         dl2 = apply_detectors.DataLoader(store_N_seconds=0)
-        loaded = dl2.load_1c_data(file2, min_signal_percent=0)
+        loaded, error = dl2.load_1c_data(file2, min_signal_percent=0)
 
         # Check that the continuous data and metadata has been correctly updated
         assert loaded
+        assert error is None
         assert dl.continuous_data.shape == (8641000, 1)
         assert dl.metadata["starttime"] == dl.metadata["original_starttime"] - 10
         assert (
@@ -1321,8 +1342,9 @@ class TestDataLoader:
 
         # Check that the previous data has been correctly updated
         file3 = f"{examples_dir}/WY.YMR..HHZ__2002-01-03T00:00:00.000000Z__2002-01-04T00:00:00.000000Z.mseed"
-        loaded = dl.load_1c_data(file3, min_signal_percent=0)
+        loaded, error = dl.load_1c_data(file3, min_signal_percent=0)
         assert loaded
+        assert error is None
         assert dl.previous_endtime == file2_endtime
         assert np.array_equal(dl.previous_continuous_data, file2_enddata)
         file2_previous_gaps = list(
@@ -1339,8 +1361,9 @@ class TestDataLoader:
         fileZ = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         # Load data succesfully
         dl = apply_detectors.DataLoader(store_N_seconds=10)
-        loaded = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
+        loaded, error = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
         assert loaded
+        assert error is None
         previous_endtime = dl.metadata["original_endtime"]
         previous_enddata = dl.continuous_data[-1000:, :]
         all_previous_gaps = dl.gaps
@@ -1353,8 +1376,9 @@ class TestDataLoader:
         fileE = f"{examples_dir}/WY.YMR..HHE__2002-01-02T00:00:00.000000Z__2002-01-03T00:00:00.000000Z.mseed"
         fileN = f"{examples_dir}/WY.YMR..HHN__2002-01-02T00:00:00.000000Z__2002-01-03T00:00:00.000000Z.mseed"
         fileZ = f"{examples_dir}/WY.YMR..HHZ__2002-01-02T00:00:00.000000Z__2002-01-03T00:00:00.000000Z.mseed"
-        loaded = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
+        loaded, error = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
         assert loaded
+        assert error is None
 
         # Check previous data is loaded
         assert dl.previous_continuous_data.shape == (1000, 3)
@@ -1374,8 +1398,9 @@ class TestDataLoader:
 
         # load the 2nd set of files without prepending previous so I can make sure the signals are the same
         dl2 = apply_detectors.DataLoader(store_N_seconds=0)
-        loaded = dl2.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
+        loaded, error = dl2.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
         assert loaded
+        assert error is None
         assert np.array_equal(dl2.continuous_data, dl.continuous_data[1000:, :])
 
     def test_load_data_1c_prepend_previous_trimmed(self):
@@ -1385,24 +1410,26 @@ class TestDataLoader:
         file1 = f"{examples_dir}/WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         # Load data succesfully
         dl = apply_detectors.DataLoader(store_N_seconds=10)
-        loaded = dl.load_1c_data(file1, min_signal_percent=0)
+        loaded, error = dl.load_1c_data(file1, min_signal_percent=0)
         previous_endtime = dl.metadata["original_endtime"]
         all_previous_gaps = dl.gaps
 
         # Previous_data should be none until the next day is read in
         assert loaded
+        assert error is None
         assert dl.previous_continuous_data is None
         assert dl.previous_endtime is None
         assert dl.previous_cont_data_gaps is None
 
         file2 = f"{examples_dir}/WY.YWB..EHZ__2002-01-02T00:00:00.000000Z__2002-01-03T00:00:00.000000Z.mseed"
-        loaded = dl.load_1c_data(file2, min_signal_percent=0)
+        loaded, error = dl.load_1c_data(file2, min_signal_percent=0)
         file2_enddtime = dl.metadata["original_endtime"]
         file2_enddata = dl.continuous_data[-1000:, :]
         file2_all_previous_gaps = dl.gaps
 
         # Check previous data is loaded
         assert loaded
+        assert error is None
         assert dl.previous_continuous_data.shape == (1000, 1)
         assert dl.previous_endtime == previous_endtime
         previous_gaps = list(
@@ -1419,9 +1446,10 @@ class TestDataLoader:
         assert dl.metadata["starttime"] == dl.metadata["original_starttime"] - 10
 
         file3 = f"{examples_dir}/WY.YWB..EHZ__2002-01-03T00:00:00.000000Z__2002-01-04T00:00:00.000000Z.mseed"
-        loaded = dl.load_1c_data(file3, min_signal_percent=0)
+        loaded, error = dl.load_1c_data(file3, min_signal_percent=0)
         # Check that the previous data has been correctly updated
         assert loaded
+        assert error is None
         assert dl.previous_endtime == file2_enddtime
         assert np.array_equal(dl.previous_continuous_data, file2_enddata)
         file2_previous_gaps = list(
@@ -1439,16 +1467,18 @@ class TestDataLoader:
         fileZ = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         # Load data succesfully
         dl = apply_detectors.DataLoader(store_N_seconds=10)
-        loaded = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
+        loaded, error = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
         assert loaded
+        assert error is None
         assert dl.continuous_data is not None
         assert dl.previous_continuous_data is None
         assert dl.previous_endtime is None
         assert dl.previous_cont_data_gaps is None
 
         # Try to load data but skip the day because not enough signal
-        loaded = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=99.5)
+        loaded, error = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=99.5)
         assert not loaded
+        assert error == "insufficient_data"
         # The previous data should still exist until a new day is loaded or
         # reset explicitly
         assert dl.continuous_data is None
@@ -1458,8 +1488,9 @@ class TestDataLoader:
 
         # Load data succesfully again - previous day info should be gone
         dl = apply_detectors.DataLoader(store_N_seconds=10)
-        loaded = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
+        loaded, error = dl.load_3c_data(fileE, fileN, fileZ, min_signal_percent=0)
         assert loaded
+        assert error is None
         assert dl.continuous_data is not None
         assert dl.previous_continuous_data is None
         assert dl.previous_endtime is None
@@ -1469,18 +1500,20 @@ class TestDataLoader:
         fileZ = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         # Load data succesfully
         dl = apply_detectors.DataLoader(store_N_seconds=10)
-        loaded = dl.load_1c_data(fileZ, min_signal_percent=0)
+        loaded, error = dl.load_1c_data(fileZ, min_signal_percent=0)
         assert loaded
+        assert error is None
         assert dl.continuous_data is not None
         assert dl.previous_continuous_data is None
         assert dl.previous_endtime is None
         assert dl.previous_cont_data_gaps is None
 
         # Try to load data but skip the day because not enough signal
-        loaded = dl.load_1c_data(fileZ, min_signal_percent=99.5)
+        loaded, error = dl.load_1c_data(fileZ, min_signal_percent=99.5)
         # The previous data should still exist until a new day is loaded or
         # reset explicitly
         assert not loaded
+        assert error == "insufficient_data"
         assert dl.continuous_data is None
         assert dl.previous_continuous_data is not None
         assert dl.previous_endtime is not None
@@ -1488,8 +1521,9 @@ class TestDataLoader:
 
         # Load data succesfully - previous day info should be gone
         dl = apply_detectors.DataLoader(store_N_seconds=10)
-        loaded = dl.load_1c_data(fileZ, min_signal_percent=0)
+        loaded, error = dl.load_1c_data(fileZ, min_signal_percent=0)
         assert loaded
+        assert error is None
         assert dl.continuous_data is not None
         assert dl.previous_continuous_data is None
         assert dl.previous_endtime is None
@@ -1501,11 +1535,13 @@ class TestDataLoader:
         outfile = dl.make_outfile_name(fileZ, f"{examples_dir}")
 
         # Load data succesfully (so can store previous data)
-        loaded = dl.load_1c_data(fileZ, min_signal_percent=0)
+        loaded, error = dl.load_1c_data(fileZ, min_signal_percent=0)
         assert loaded
+        assert error is None
         # Fail to load
-        loaded = dl.load_1c_data(fileZ, min_signal_percent=99.5)
+        loaded, error = dl.load_1c_data(fileZ, min_signal_percent=99.5)
         assert not loaded
+        assert error == "insufficient_data"
         # Write error info and reset loader
         dl.error_in_loading(outfile=outfile)
         assert dl.continuous_data is None
@@ -1966,8 +2002,9 @@ class TestDataLoader:
     def test_format_continuous_for_unet_1c_P_real_data(self):
         dl = apply_detectors.DataLoader()
         file1 = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
-        loaded = dl.load_1c_data(file1)
+        loaded, error = dl.load_1c_data(file1)
         assert loaded
+        assert error is None
         window_length = 1008
         sliding_interval = 500
         data_unproc, start_pad_npts, end_pad_npts = dl.format_continuous_for_unet(
@@ -1991,7 +2028,9 @@ class TestDataLoader:
     def test_simplify_gaps(self):
         dl = apply_detectors.DataLoader()
         file1 = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
-        loaded = dl.load_1c_data(file1)
+        loaded, error = dl.load_1c_data(file1)
+        assert loaded
+        assert error is None
         simplified_gaps = dl.simplify_gaps(dl.gaps)
         for i, gap in enumerate(simplified_gaps):
             assert gap[0] == "HHZ", f"gap {i} channel is incorrect"
@@ -2006,8 +2045,9 @@ class TestDataLoader:
     def test_write_data_info_1c(self):
         dl = apply_detectors.DataLoader()
         file1 = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
-        loaded = dl.load_1c_data(file1)
+        loaded, error = dl.load_1c_data(file1)
         assert loaded
+        assert error is None
         outfile = os.path.join(examples_dir, "gaps.json")
         dl.write_data_info(outfile)
 
@@ -2050,8 +2090,9 @@ class TestDataLoader:
         fileE = f"{examples_dir}/WY.YMR..HHE__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         fileN = f"{examples_dir}/WY.YMR..HHN__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         fileZ = f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
-        loaded = dl.load_3c_data(fileE, fileN, fileZ)
+        loaded, error = dl.load_3c_data(fileE, fileN, fileZ)
         assert loaded
+        assert error is None
         outfile = os.path.join(examples_dir, "gaps.json")
         dl.write_data_info(outfile)
 
@@ -2189,16 +2230,18 @@ class TestDataLoader:
         fileE = f"{examples_dir}/IW.IMW.00.BH1__2023-01-07T00:00:00.000000Z__2023-01-08T00:00:00.000000Z_100hz.mseed"
         fileN = f"{examples_dir}/IW.IMW.00.BH2__2023-01-07T00:00:00.000000Z__2023-01-08T00:00:00.000000Z_100hz.mseed"
         fileZ = f"{examples_dir}/IW.IMW.00.BHZ__2023-01-07T00:00:00.000000Z__2023-01-08T00:00:00.000000Z_100hz.mseed"
-        loaded = dl.load_3c_data(fileE, fileN, fileZ)
+        loaded, error = dl.load_3c_data(fileE, fileN, fileZ)
         assert loaded
+        assert error is None
 
     def test_endtimes_not_close(self):
         dl = apply_detectors.DataLoader()
         fileE = f"{examples_dir}/WY.YDD.01.HHE__2023-01-08T00:00:00.000000Z__2023-01-09T00:00:00.000000Z.mseed"
         fileN = f"{examples_dir}/WY.YDD.01.HHN__2023-01-08T00:00:00.000000Z__2023-01-09T00:00:00.000000Z.mseed"
         fileZ = f"{examples_dir}/WY.YDD.01.HHZ__2023-01-08T00:00:00.000000Z__2023-01-09T00:00:00.000000Z.mseed"
-        loaded = dl.load_3c_data(fileE, fileN, fileZ)
+        loaded, error = dl.load_3c_data(fileE, fileN, fileZ)
         assert loaded
+        assert error is None
 
 
 class TestPhaseDetector:
@@ -2514,13 +2557,14 @@ class TestApplyDetectorSyncronousOpenVino:
     def test_apply_to_file_day_1c(self):
         applier = apply_detectors.ApplyDetector(1, apply_sync_openvino_detector_config)
         assert applier.p_detector.openvino_compiled is True
-        succeeded, _, _ = applier.apply_to_one_file(
+        succeeded, error, _, _ = applier.apply_to_one_file(
             [
                 f"{examples_dir}/WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
             ],
             debug_N_examples=256,
         )
         assert succeeded
+        assert error is None
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         assert os.path.exists(expected_p_probs_file)
         probs_st = obspy.read(expected_p_probs_file)
@@ -2549,8 +2593,9 @@ class TestApplyDetectorSyncronousOpenVino:
             f"{examples_dir}/WY.YMR..HHN__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
             f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
         ]
-        succeeded, _, _ = applier.apply_to_one_file(files, debug_N_examples=256)
+        succeeded,error, _, _ = applier.apply_to_one_file(files, debug_N_examples=256)
         assert succeeded
+        assert error is None
         # P Probs - 3c name should have E or 1 channel
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YMR..HHE__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         assert os.path.exists(expected_p_probs_file)
@@ -2713,13 +2758,14 @@ class TestApplyDetectorSyncronousOpenVino:
         applier = apply_detectors.ApplyDetector(
             1, apply_sync_openvino_detector_config_npz
         )
-        succeeded, _, _ = applier.apply_to_one_file(
+        succeeded, error,  _, _ = applier.apply_to_one_file(
             [
                 f"{examples_dir}/WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
             ],
             debug_N_examples=256,
         )
         assert succeeded
+        assert error is None
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.npz"
         assert os.path.exists(expected_p_probs_file)
         data = np.load(expected_p_probs_file)["probs"]
@@ -2747,8 +2793,9 @@ class TestApplyDetectorSyncronousOpenVino:
             f"{examples_dir}/WY.YMR..HHN__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
             f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
         ]
-        succeeded, _, _ = applier.apply_to_one_file(files, debug_N_examples=256)
+        succeeded, error, _, _ = applier.apply_to_one_file(files, debug_N_examples=256)
         assert succeeded
+        assert error is None
         # P Probs - 3c name should have E or 1 channel
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YMR..HHE__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.npz"
         assert os.path.exists(expected_p_probs_file)
@@ -2969,13 +3016,14 @@ class TestApplyDetectorAsyncronousOpenVino:
     def test_apply_to_file_day_1c(self):
         applier = apply_detectors.ApplyDetector(1, apply_async_openvino_detector_config)
         assert applier.p_detector.openvino_compiled is True
-        succeeded, _, _ = applier.apply_to_one_file(
+        succeeded, error, _, _ = applier.apply_to_one_file(
             [
                 f"{examples_dir}/WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
             ],
             debug_N_examples=256,
         )
         assert succeeded
+        assert error is None
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         assert os.path.exists(expected_p_probs_file)
         probs_st = obspy.read(expected_p_probs_file)
@@ -3004,8 +3052,9 @@ class TestApplyDetectorAsyncronousOpenVino:
             f"{examples_dir}/WY.YMR..HHN__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
             f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
         ]
-        succeeded, _, _ = applier.apply_to_one_file(files, debug_N_examples=256)
+        succeeded, error, _, _ = applier.apply_to_one_file(files, debug_N_examples=256)
         assert succeeded
+        assert error is None
         # P Probs - 3c name should have E or 1 channel
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YMR..HHE__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
         assert os.path.exists(expected_p_probs_file)
@@ -3168,13 +3217,14 @@ class TestApplyDetectorAsyncronousOpenVino:
         applier = apply_detectors.ApplyDetector(
             1, apply_async_openvino_detector_config_npz
         )
-        succeeded, _, _ = applier.apply_to_one_file(
+        succeeded, error, _, _ = applier.apply_to_one_file(
             [
                 f"{examples_dir}/WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed"
             ],
             debug_N_examples=256,
         )
         assert succeeded
+        assert error is None
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YWB..EHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.npz"
         assert os.path.exists(expected_p_probs_file)
         data = np.load(expected_p_probs_file)["probs"]
@@ -3202,8 +3252,9 @@ class TestApplyDetectorAsyncronousOpenVino:
             f"{examples_dir}/WY.YMR..HHN__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
             f"{examples_dir}/WY.YMR..HHZ__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.mseed",
         ]
-        succeeded, _, _ = applier.apply_to_one_file(files, debug_N_examples=256)
+        succeeded, error, _, _ = applier.apply_to_one_file(files, debug_N_examples=256)
         assert succeeded
+        assert error is None
         # P Probs - 3c name should have E or 1 channel
         expected_p_probs_file = f"{apply_detectors_outdir}/probs.P__WY.YMR..HHE__2002-01-01T00:00:00.000000Z__2002-01-02T00:00:00.000000Z.npz"
         assert os.path.exists(expected_p_probs_file)

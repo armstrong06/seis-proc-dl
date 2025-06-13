@@ -298,7 +298,7 @@ class ApplyDetector:
                     # Reset dataloader
                     self.dataloader.error_in_loading()
                 else:
-                    applied_successfully, p_post_probs, s_post_probs = (
+                    applied_successfully, error, p_post_probs, s_post_probs = (
                         self.apply_to_one_file(
                             files, date_outdir, debug_N_examples=debug_N_examples
                         )
@@ -308,7 +308,7 @@ class ApplyDetector:
                     db_gaps = self.dataloader.gaps
                     if not applied_successfully:
                         insufficient_data_dates.append(date_str)
-                        error = "insufficient_data"
+                        #error = "insufficient_data"
                         # Reset dataloader
                         self.dataloader.error_in_loading()
 
@@ -477,15 +477,16 @@ class ApplyDetector:
         if self.db_conn is None or not self.use_pytables:
             meta_outfile_name = self.dataloader.make_outfile_name(files[0], outdir)
         p_post_probs, s_post_probs = None, None
+        error_msg = None
         start_total = time.time()
         if self.ncomps == 1:
-            load_succeeded = self.dataloader.load_1c_data(
+            load_succeeded, error_msg = self.dataloader.load_1c_data(
                 files[0],
                 min_signal_percent=self.min_signal_percent,
             )
             # expected_file_duration_s=self.expected_file_duration_s)
         else:
-            load_succeeded = self.dataloader.load_3c_data(
+            load_succeeded, error_msg = self.dataloader.load_3c_data(
                 files[0],
                 files[1],
                 files[2],
@@ -499,7 +500,7 @@ class ApplyDetector:
                 # reset of loader will happen in apply_to_multiple_days
                 # TODO: is that a bad idea?
                 self.dataloader.write_data_info(meta_outfile_name)
-            return False, p_post_probs, s_post_probs
+            return False, error_msg, p_post_probs, s_post_probs
 
         logger.debug(f"Time to load data: {time.time() - start_total:0.2f} s")
         start_P = time.time()
@@ -528,7 +529,7 @@ class ApplyDetector:
         if self.db_conn is None:
             self.dataloader.write_data_info(meta_outfile_name)
         logger.debug(f"Total run time for day: {time.time() - start_total:0.2f} s")
-        return True, p_post_probs, s_post_probs
+        return True, error_msg, p_post_probs, s_post_probs
 
     def __apply_to_one_phase(
         self,
@@ -1331,7 +1332,7 @@ class DataLoader:
         self.store_metadata(st_E[0].stats)
         # If any loads failed, exit
         if (not load_succeeded_Z) or (not load_succeeded_E) or (not load_succeeded_N):
-            return False
+            return False, "insufficient_data"
 
         starttimes = [
             st_E[0].stats.starttime,
@@ -1358,15 +1359,21 @@ class DataLoader:
         # assert (
         #     type(st_Z[0].data[0]) == np.int32
         # ), f"Expected Z data to be np.int32 but {type(st_Z[0].data[0])}"
-        assert np.max(st_E[0].data) < 2**24 and np.min(st_E[0].data) > -(
-            2**24
-        ), "E data too large to be represented accuratley with float32"
-        assert np.max(st_N[0].data) < 2**24 and np.min(st_E[0].data) > -(
-            2**24
-        ), "N data too large to be represented accuratley with float32"
-        assert np.max(st_Z[0].data) < 2**24 and np.min(st_E[0].data) > -(
-            2**24
-        ), "Z data too large to be represented accuratley with float32"
+        # assert np.max(st_E[0].data) < 2**24 and np.min(st_E[0].data) > -(
+        #     2**24
+        # ), "E data too large to be represented accuratley with float32"
+        # assert np.max(st_N[0].data) < 2**24 and np.min(st_E[0].data) > -(
+        #     2**24
+        # ), "N data too large to be represented accuratley with float32"
+        # assert np.max(st_Z[0].data) < 2**24 and np.min(st_E[0].data) > -(
+        #     2**24
+        # ), "Z data too large to be represented accuratley with float32"
+        
+        for st in [st_E, st_N, st_Z]: 
+            if not (np.max(abs(st[0].data)) < 2**24):
+                print(st[0].data.max(), st[0].data.min())
+                return False, "values_extremely_large"
+            
         # Data from unprocessed mseed files is int32 but resampled mseed files are float64
         cont_data = np.zeros((npts[0], 3), dtype=np.float32)  # , dtype=np.int32)
         cont_data[:, 0] = st_E[0].data
@@ -1378,7 +1385,7 @@ class DataLoader:
         if self.store_N_seconds > 0:
             self.prepend_previous_data()
 
-        return True
+        return True, None
 
     def load_1c_data(self, file, min_signal_percent=1, expected_file_duration_s=86400):
         """Load miniseed file for a 1C station.
@@ -1406,14 +1413,19 @@ class DataLoader:
         self.store_metadata(st[0].stats, three_channels=False)
 
         if not load_succeeded:
-            return False
+            return False, "insufficient_data"
 
         # assert (
         #     type(st[0].data[0]) == np.int32
         # ), f"Expected data to be np.int32 but {type(st[0].data[0])}"
-        assert np.max(st[0].data) < 2**24 and np.min(st[0].data) > -(
-            2**24
-        ), "data too large to be represented accuratley with float32"
+
+        # assert np.max(st[0].data) < 2**24 and np.min(st[0].data) > -(
+        #     2**24
+        # ), "data too large to be represented accuratley with float32"
+        if not (np.max(abs(st[0].data)) < 2**24):
+            print("MAX, MIN", np.max(st[0].data), np.min(st[0].data))
+            return False, "values_extremely_large"
+        
         # Data from unprocessed mseed files is int32 but resampled mseed files are float64
         cont_data = np.zeros(
             (st[0].stats.npts, 1), dtype=np.float32
@@ -1428,7 +1440,7 @@ class DataLoader:
             # of a gap
             self.prepend_previous_data()
 
-        return True
+        return True, None
 
     def format_continuous_for_unet(
         self,
