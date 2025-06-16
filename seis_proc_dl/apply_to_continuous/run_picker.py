@@ -231,8 +231,31 @@ sp = apply_swag_pickers.MultiSWAGPickerDB(
     cal_model_file=os.path.join(args.model_path, args.cal_file),
     device=args.device,
 )
+
+add_repicker_params = {
+    "n_models": 3,
+    "n_evals_per_model": args.N,
+    "wf_sample_dur": args.dur,
+    "wf_proc_pad": args.pad,
+    "model_settings": {
+        "cov_mat": args.cov_mat,
+        "K": args.K,
+        "seeds": args.seeds,
+        "swag_model1": args.swag_model1,
+        "swag_model2": args.swag_model2,
+        "swag_model3": args.swag_model3,
+        "train_path": args.train_path,
+        "train_file": args.train_file,
+        "shuffle_train": args.shuffle_train,
+    },
+}
+
 sp.start_db_conn(
-    repicker_dict={"name": args.repicker_name, "desc": args.repicker_desc},
+    repicker_dict={
+        "name": args.repicker_name,
+        "desc": args.repicker_desc,
+        "params": add_repicker_params,
+    },
     cal_dict={"name": args.cal_name, "desc": args.cal_desc},
     cal_loc_type=args.cal_loc_type,
     cal_scale_type=args.cal_scale_type,
@@ -245,7 +268,7 @@ ids, data_loader = sp.torch_loader_from_db(
     start_date=start_date,
     end_date=end_date,
     wf_source_list=args.sources,
-    padding=args.pad
+    padding=args.pad,
 )
 
 # Load the training data for bn_updates:q

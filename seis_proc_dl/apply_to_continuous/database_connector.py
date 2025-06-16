@@ -834,12 +834,13 @@ class SwagPickerDBConnection:
         self.repicker_method_id = None
         self.calibration_method_id = None
 
-    def add_repicker_method(self, name, desc, path):
+    def add_repicker_method(self, name, desc, path, addition_params_dict={}):
         """Add a repicker method to the database. If it already exists, update it."""
         with self.Session() as session:
             with session.begin():
                 services.upsert_repicker_method(
-                    session, name, phase=self.phase, details=desc, path=path
+                    session, name, phase=self.phase, details=desc, path=path,
+                    **addition_params_dict
                 )
                 self.repicker_method_id = services.get_repicker_method(session, name).id
 

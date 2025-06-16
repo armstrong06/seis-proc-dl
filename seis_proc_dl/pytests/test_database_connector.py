@@ -452,7 +452,7 @@ class TestDetectorDBConnection:
         new_date, metadata_dict = contdatainfo_ex
         db_conn.save_data_info(new_date, metadata_dict)
         return session, db_conn
-    
+
     def test_save_data_info(self, db_session_with_saved_contdatainfo, contdatainfo_ex):
         session, db_conn = db_session_with_saved_contdatainfo
         new_date, metadata_dict = contdatainfo_ex
@@ -2265,8 +2265,9 @@ class TestApplyDetectorDB:
             .where(tables.DailyContDataInfo.error == "gap_between_new_channels")
         ).all()
 
-        assert len(chan_gap_rows) == 10, "expected 2 days that have gap_between_new_channels error"
-
+        assert (
+            len(chan_gap_rows) == 10
+        ), "expected 2 days that have gap_between_new_channels error"
 
     def test_save_daily_results_in_db_1C_gaps_empty(
         self, db_session_with_3c_stat_loaded, contdatainfo_ex, mock_pytables_config
@@ -3002,6 +3003,7 @@ class TestMultiSWAGPickerDB:
         repicker_dict = {
             "name": "TEST-MSWAG-BSSA-2023",
             "desc": "MSWAG models presented in Armstrong et al., 2023.",
+            "params": {},
         }
         cal_dict = {
             "name": "TEST-Kuleshov",
@@ -3019,10 +3021,28 @@ class TestMultiSWAGPickerDB:
     ):
         sp = init_p_picker
         repicker_dict, cal_dict = method_dicts_ex
+        repicker_dict["params"] = {
+            "n_models": 3,
+            "n_evals_per_model": 40,
+            "wf_sample_dur": 400,
+            "wf_proc_pad": 100,
+            "model_settings": {
+                "cov_mat": True,
+                "K": 20,
+                "seeds": [1, 2, 3],
+                "swag_model1": "m1.pt",
+                "swag_model2": "m2.pt",
+                "swag_model3": "m3.pt",
+                "train_path": "path/to/train",
+                "train_file": "train.h5",
+                "shuffle_train": False,
+            },
+        }
+
         session, ids = db_session_with_waveform_info  # Unpack session & patch function
         sp.start_db_conn(repicker_dict, cal_dict, session_factory=lambda: session)
 
-        return sp, ids
+        return session, sp, ids
 
     @pytest.fixture
     def s_picker_with_db_conn(
@@ -3033,10 +3053,10 @@ class TestMultiSWAGPickerDB:
         repicker_dict, cal_dict = method_dicts_ex
         sp.start_db_conn(repicker_dict, cal_dict, session_factory=lambda: session)
 
-        return sp, ids
+        return session, sp, ids
 
     def test_start_db_conn(self, p_picker_with_db_conn):
-        sp, _ = p_picker_with_db_conn
+        session, sp, _ = p_picker_with_db_conn
         assert sp.db_conn is not None, "db connection not set"
         assert sp.db_conn.phase == "P", "phase type is not set correctly in db conn"
         assert (
@@ -3048,8 +3068,26 @@ class TestMultiSWAGPickerDB:
         assert sp.cal_loc_type == "trim_median"
         assert sp.cal_scale_type == "trim_std"
 
+        rp_meth = session.get(tables.RepickerMethod, sp.db_conn.repicker_method_id)
+        assert rp_meth.n_comps == 1
+        assert rp_meth.wf_proc_fn_name == "process_1c_P"
+        assert rp_meth.n_models == 3
+        assert rp_meth.n_evals_per_model == 40
+        assert rp_meth.wf_sample_dur == 400
+        assert rp_meth.wf_proc_pad == 100
+        rp_model_settings = rp_meth.model_settings
+        assert rp_model_settings["cov_mat"] == True
+        assert rp_model_settings["K"] == 20
+        assert rp_model_settings["seeds"] == [1, 2, 3]
+        assert rp_model_settings["swag_model1"] == "m1.pt"
+        assert rp_model_settings["swag_model2"] == "m2.pt"
+        assert rp_model_settings["swag_model3"] == "m3.pt"
+        assert rp_model_settings["train_path"] == "path/to/train"
+        assert rp_model_settings["train_file"] == "train.h5"
+        assert rp_model_settings["shuffle_train"] == False
+
     def test_torch_loader_from_db_P(self, p_picker_with_db_conn):
-        sp, init_ids = p_picker_with_db_conn
+        session, sp, init_ids = p_picker_with_db_conn
         returned_ids, loader = sp.torch_loader_from_db(
             400,
             1,
@@ -3071,7 +3109,7 @@ class TestMultiSWAGPickerDB:
         assert np.allclose(ref_proc_data[:, 1], returned_data, 1e-2)
 
     def test_torch_loader_from_db_S(self, s_picker_with_db_conn):
-        sp, init_ids = s_picker_with_db_conn
+        session, sp, init_ids = s_picker_with_db_conn
         returned_ids, loader = sp.torch_loader_from_db(
             600,
             1,
@@ -3098,7 +3136,7 @@ class TestMultiSWAGPickerDB:
         assert np.allclose(ref_proc_data[:, 2], returned_data[2, :], 1e-2)
 
     def test_calibrate_and_save(self, p_picker_with_db_conn, mock_pytables_config):
-        sp, init_ids = p_picker_with_db_conn
+        session, sp, init_ids = p_picker_with_db_conn
         pick_source_ids = [
             {"pick_id": init_ids["p_pick1"], "wf_source_id": init_ids["wf_source1"]}
         ]

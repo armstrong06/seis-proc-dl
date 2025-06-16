@@ -351,6 +351,13 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
         self.cal_loc_type = None
         self.cal_scale_type = None
 
+        if self.phase == "S":
+            self.proc_fn = self.process_3c_S
+            self.threeC_waveforms = True
+        else:
+            self.proc_fn = self.process_1c_P
+            self.threeC_waveforms = False
+
     ## FUNCTIONS WHEN USING DB ##
     def start_db_conn(
         self,
@@ -363,11 +370,17 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
         self.db_conn = SwagPickerDBConnection(
             self.phase, session_factory=session_factory
         )
+
+        repicker_params = repicker_dict["params"]
+        repicker_params["n_comps"] = 3 if self.threeC_waveforms else 1
+        repicker_params["wf_proc_fn_name"] = self.proc_fn.__name__
+
         # Get/set repicker method
         self.db_conn.add_repicker_method(
             repicker_dict["name"],
             repicker_dict["desc"],
             self.swag_model_dir,
+            addition_params_dict=repicker_params
         )
 
         # Get/set calibration method
@@ -394,19 +407,14 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
         no_proc=False,
     ):
 
-        if self.phase == "S":
-            proc_fn = self.process_3c_S
-            threeC_waveforms = True
-        else:
-            proc_fn = self.process_1c_P
-            threeC_waveforms = False
-
+        proc_fn = self.proc_fn
         if no_proc:
+            logger.warning("Turning the waveform processing function off. The RepickerMethod.wf_proc_fn_name will be incorrect!")
             proc_fn = None
 
         ids, X = self.db_conn.get_waveforms(
             n_samples=n_samples,
-            threeC_waveforms=threeC_waveforms,
+            threeC_waveforms=self.threeC_waveforms,
             proc_fn=proc_fn,
             start=start_date,
             end=end_date,
