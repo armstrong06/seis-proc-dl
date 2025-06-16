@@ -234,12 +234,12 @@ def db_session_with_3c_stat_loaded(db_session, stat_ex, channel_ex_3c):
     patch_session(db_conn)  # Patch `self.Session` on the instance
 
     start, end = db_conn.get_channel_dates(
-            datetime.strptime("2011-09-10T00:00:00.00", datetimeformat),
-            "JK",
-            "TST",
-            "",
-            "HH",
-        )
+        datetime.strptime("2011-09-10T00:00:00.00", datetimeformat),
+        "JK",
+        "TST",
+        "",
+        "HH",
+    )
 
     return session, db_conn
 
@@ -383,12 +383,13 @@ class TestDetectorDBConnection:
         session, db_conn = db_session_with_3c_stat_loaded
         date = datetime.strptime("2013-04-01", dateformat)
         db_conn.update_channels(date)
-        assert (
-            db_conn.channel_info.ondate is None
-        ), "ondate should not be set, date out of range"
-        assert (
-            db_conn.channel_info.offdate is None
-        ), "offdate should not be set, date out of range"
+        assert db_conn.channel_info is None, "channel_info should be None"
+        # assert (
+        #     db_conn.channel_info.ondate is None
+        # ), "ondate should not be set, date out of range"
+        # assert (
+        #     db_conn.channel_info.offdate is None
+        # ), "offdate should not be set, date out of range"
 
     def test_update_channels(self, db_session_with_3c_stat_loaded):
         session, db_conn = db_session_with_3c_stat_loaded
@@ -439,8 +440,9 @@ class TestDetectorDBConnection:
         assert (
             db_conn.daily_info.date == new_date
         ), "invalid date in DailyDetectionDBInfo"
-        assert db_conn.channel_info.ondate is None, "invalid ondate"
-        assert db_conn.channel_info.offdate is None, "invalid ondate"
+        assert db_conn.channel_info is None, "channel_info should be None"
+        # assert db_conn.channel_info.ondate is None, "invalid ondate"
+        # assert db_conn.channel_info.offdate is None, "invalid ondate"
 
     @pytest.fixture
     def db_session_with_saved_contdatainfo(
@@ -450,7 +452,7 @@ class TestDetectorDBConnection:
         new_date, metadata_dict = contdatainfo_ex
         db_conn.save_data_info(new_date, metadata_dict)
         return session, db_conn
-
+    
     def test_save_data_info(self, db_session_with_saved_contdatainfo, contdatainfo_ex):
         session, db_conn = db_session_with_saved_contdatainfo
         new_date, metadata_dict = contdatainfo_ex
@@ -2163,9 +2165,11 @@ class TestApplyDetectorDB:
             "WY", "YWB", "", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
         )
 
-    def test_apply_to_multiple_days_updated_start_no_data(self, db_session, mock_pytables_config):
-        """Case when the original start date/ndays must be altered given the channel operating days, 
-        but there is no data on the first day of operation. """
+    def test_apply_to_multiple_days_updated_start_no_data(
+        self, db_session, mock_pytables_config
+    ):
+        """Case when the original start date/ndays must be altered given the channel operating days,
+        but there is no data on the first day of operation."""
         session, _ = db_session
         applier = ApplyDetector(
             3, apply_detector_config, session_factory=lambda: session
@@ -2173,6 +2177,96 @@ class TestApplyDetectorDB:
         applier.apply_to_multiple_days(
             "WY", "YMV", "01", "HH", 2023, 8, 1, 15, debug_N_examples=256
         )
+
+    @pytest.fixture()
+    def channel_operating_gap_ex(self):
+        """Mimic IW.IMW.00.BH, which has a gap in channel dates between 9/16 and 9/26"""
+
+        d = {
+            "loc": "00",
+            "samp_rate": 100.0,
+            "clock_drift": 1e-5,
+            "sensor_desc": "Nanometrics something or other",
+            "sensit_units": "M/S",
+            "sensit_val": 9e9,
+            "sensit_freq": 5,
+            "lat": 44.7155,
+            "lon": -110.67917,
+            "elev": 2336,
+            "depth": 100,
+            "azimuth": 90,
+            "dip": -90,
+            "offdate": None,
+            "overall_gain_vel": None,
+        }
+
+        s1 = datetime.strptime("2013-07-25T15:11:00.00", datetimeformat)
+        e1 = datetime.strptime("2023-09-15T17:00:00.00", datetimeformat)
+        s2 = datetime.strptime("2023-09-26T00:00:00.00", datetimeformat)
+        e2 = None
+        chan_dict_list = []
+        for start, end in [(s1, e1), (s2, e2)]:
+            for seed_code in ["BHZ", "BH1", "BH2"]:
+                chan = deepcopy(d)
+                chan["seed_code"] = seed_code
+                chan["ondate"] = start
+                chan["offdate"] = end
+                chan_dict_list.append(chan)
+
+        return deepcopy(chan_dict_list)
+
+    @pytest.fixture
+    def db_session_with_gap_in_channel_dates(
+        self, db_session, stat_ex, channel_operating_gap_ex
+    ):
+        session, patch_session = db_session  # Unpack session & patch function
+
+        stat_dict = stat_ex
+        chan_dict_list = channel_operating_gap_ex
+
+        stat = services.insert_station(session, **stat_dict)
+        session.flush()
+
+        for chan in chan_dict_list:
+            chan["sta_id"] = stat.id
+
+        services.insert_channels(session, chan_dict_list)
+        session.commit()
+
+        return session
+
+    def test_apply_to_multiple_days_channel_operating_gap(
+        self, db_session_with_gap_in_channel_dates, mock_pytables_config
+    ):
+        """Handle the case when there is a gap in the operating days of the channels"""
+        session = db_session_with_gap_in_channel_dates
+        applier = ApplyDetector(
+            3, apply_detector_config, session_factory=lambda: session
+        )
+        applier.apply_to_multiple_days(
+            "JK", "TST", "00", "BH", 2023, 9, 15, 12, debug_N_examples=256
+        )
+
+        from sqlalchemy import select
+
+        no_data_rows = session.execute(
+            select(tables.DailyContDataInfo.date, tables.DailyContDataInfo.error)
+            .join(tables.Station, tables.Station.id == tables.DailyContDataInfo.sta_id)
+            .where(tables.Station.sta == "TST")
+            .where(tables.DailyContDataInfo.error == "no_data")
+        ).all()
+
+        assert len(no_data_rows) == 2, "expected 2 days that have no_data error"
+
+        chan_gap_rows = session.execute(
+            select(tables.DailyContDataInfo.date, tables.DailyContDataInfo.error)
+            .join(tables.Station, tables.Station.id == tables.DailyContDataInfo.sta_id)
+            .where(tables.Station.sta == "TST")
+            .where(tables.DailyContDataInfo.error == "gap_between_new_channels")
+        ).all()
+
+        assert len(chan_gap_rows) == 10, "expected 2 days that have gap_between_new_channels error"
+
 
     def test_save_daily_results_in_db_1C_gaps_empty(
         self, db_session_with_3c_stat_loaded, contdatainfo_ex, mock_pytables_config

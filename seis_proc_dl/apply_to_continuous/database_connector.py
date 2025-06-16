@@ -56,6 +56,7 @@ class DetectorDBConnection:
         self.seed_code = None
         self.net = None
         self.loc = None
+        self.last_channel_date = None
 
         self.station_id = None
         self.channel_info = None
@@ -114,6 +115,7 @@ class DetectorDBConnection:
                     )
                     self.channel_info = ChannelInfo(selected_channels, total_ndays)
 
+        self.last_channel_date = end_date
         return start_date, end_date
 
     def add_waveform_source(
@@ -173,8 +175,10 @@ class DetectorDBConnection:
         return True
 
     def validate_channels_for_date(self, date):
-        if self.channel_info is not None and date >= self.channel_info.ondate and (
-            self.channel_info.offdate is None or date <= self.channel_info.offdate
+        if (
+            self.channel_info is not None
+            and date >= self.channel_info.ondate
+            and (self.channel_info.offdate is None or date <= self.channel_info.offdate)
         ):
             return True
 
@@ -184,17 +188,19 @@ class DetectorDBConnection:
         with self.Session() as session:
             with session.begin():
                 # Get the Station object and the Channel objects for the appropriate date
-                selected_station, selected_channels = services.get_operating_channels_by_station_name(
-                    session,
-                    self.station_name,
-                    self.seed_code,
-                    date,
-                    net=self.net,
-                    loc=self.loc,
+                selected_station, selected_channels = (
+                    services.get_operating_channels_by_station_name(
+                        session,
+                        self.station_name,
+                        self.seed_code,
+                        date,
+                        net=self.net,
+                        loc=self.loc,
+                    )
                 )
 
                 if selected_channels is None or len(selected_channels) == 0:
-                    self.channel_info = ChannelInfo([], 0)
+                    self.channel_info = None # ChannelInfo([], 0)
                     return False
 
                 if self.station_id is None:
@@ -219,7 +225,9 @@ class DetectorDBConnection:
         # results will be the same every time. Hopefully that's fine...
 
         started_new_day = self.start_new_day(date)
-        if not started_new_day:
+        if not started_new_day and (self.last_channel_date is None or date <= self.last_channel_date):
+            error = "gap_between_new_channels"
+        elif not started_new_day:
             raise ValueError(f"Cannot start processing {date}, no channel info exists")
 
         with self.Session() as session:
