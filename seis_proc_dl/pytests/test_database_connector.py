@@ -3145,7 +3145,7 @@ class TestMultiSWAGPickerDB:
         expected_pytable_file = (
             f"repicker{sp.db_conn.repicker_method_id}_P_2010-02-01_2010-02-02_N120.h5"
         )
-        assert inserted_corr[0].preds_hdf_file == expected_pytable_file
+        assert inserted_corr[0].preds_hdf_file.name == expected_pytable_file
         cis = inserted_corr[0].cis
         assert len(cis) == 2, "incorrect number of credible intervals"
         assert cis[0].percent in [68, 90]
