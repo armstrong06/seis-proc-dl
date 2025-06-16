@@ -47,6 +47,7 @@ class ChannelInfo:
 class DetectorDBConnection:
     EXPECTED_DAILY_P_PICKS = 1000
     EXPECTED_DAILY_S_PICKS = 1000
+    MAX_WAVEFORMS_PER_STORAGE = 150_000
 
     def __init__(self, ncomps, session_factory=None):
         self.Session = session_factory or database.Session
@@ -69,6 +70,8 @@ class DetectorDBConnection:
         # Wavefroms will need a storage for each channel - keep them in dicts
         self.waveform_storage_dict_P = None
         self.waveform_storage_dict_S = None
+        self.n_P_waveform_storage_entries = 0
+        self.n_S_waveform_storage_entries = 0
         # Only need one storage per phase for detection outputs
         self.detout_storage_P = None
         self.detout_storage_S = None
@@ -200,7 +203,7 @@ class DetectorDBConnection:
                 )
 
                 if selected_channels is None or len(selected_channels) == 0:
-                    self.channel_info = None # ChannelInfo([], 0)
+                    self.channel_info = None  # ChannelInfo([], 0)
                     return False
 
                 if self.station_id is None:
@@ -225,7 +228,9 @@ class DetectorDBConnection:
         # results will be the same every time. Hopefully that's fine...
 
         started_new_day = self.start_new_day(date)
-        if not started_new_day and (self.last_channel_date is None or date <= self.last_channel_date):
+        if not started_new_day and (
+            self.last_channel_date is None or date <= self.last_channel_date
+        ):
             error = "gap_between_new_channels"
         elif not started_new_day:
             raise ValueError(f"Cannot start processing {date}, no channel info exists")
@@ -452,42 +457,55 @@ class DetectorDBConnection:
         storage.commit()
         return detout_id
 
-    def _get_waveform_storages(self, is_p, common_wf_details):
+    def _get_waveform_storages(self, session, is_p, common_wf_details):
 
-        if (is_p and self.waveform_storage_dict_P is None) or (
-            not is_p and self.waveform_storage_dict_S is None
-        ):
-            pytables_storage = {}
+        if is_p:
+            curr_storage = self.waveform_storage_dict_P
+            curr_count = self.n_P_waveform_storage_entries
+        else:
+            curr_storage = self.waveform_storage_dict_S
+            curr_count = self.n_S_waveform_storage_entries
+
+        if curr_storage is None or (curr_count > self.MAX_WAVEFORMS_PER_STORAGE):
+            if curr_storage is not None:
+                for key, stor in curr_storage.items():
+                    stor.close()
+
+            new_storage = {}
             for seed_code, chan_id in self.channel_info.channel_ids.items():
-                pytables_storage[chan_id] = pytables_backend.WaveformStorage(
+                # TODO: implement this function
+                storage_number, hdf_file, count = services.get_waveform_storage_number(
+                    session, self.station_id, chan_id, self.MAX_WAVEFORMS_PER_STORAGE
+                )
+                new_storage[chan_id] = pytables_backend.WaveformStorage(
                     expected_array_length=common_wf_details["expected_array_length"],
                     net=self.net,
                     sta=self.station_name,
                     loc=self.loc,
                     seed_code=seed_code,
                     ncomps=self.ncomps,
+                    storage_number=storage_number,
                     phase=common_wf_details["phase"],
                     wf_source_id=self.wf_source_id,
                     on_event=common_wf_details["on_event"],
-                    expectedrows=(
-                        self.EXPECTED_DAILY_P_PICKS * self.channel_info.ndays
-                        if is_p
-                        else self.EXPECTED_DAILY_S_PICKS * self.channel_info.ndays
-                    ),
+                    expectedrows=self.MAX_WAVEFORMS_PER_STORAGE,
+                    # expectedrows=(
+                    #     self.EXPECTED_DAILY_P_PICKS * self.channel_info.ndays
+                    #     if is_p
+                    #     else self.EXPECTED_DAILY_S_PICKS * self.channel_info.ndays
+                    # ),
                 )
 
             if is_p:
-                self.waveform_storage_dict_P = pytables_storage
+                self.waveform_storage_dict_P = new_storage
+                self.n_P_waveform_storage_entries = count
             else:
-                self.waveform_storage_dict_S = pytables_storage
+                self.waveform_storage_dict_S = new_storage
+                self.n_S_waveform_storage_entries = count
 
+            return new_storage
         else:
-            if is_p:
-                pytables_storage = self.waveform_storage_dict_P
-            else:
-                pytables_storage = self.waveform_storage_dict_S
-
-        return pytables_storage
+            return curr_storage
 
     def save_picks_from_detections(
         self,
@@ -532,7 +550,7 @@ class DetectorDBConnection:
                     storage_dict = None
                     if use_pytables:
                         storage_dict = self._get_waveform_storages(
-                            is_p, common_wf_details
+                            session, is_p, common_wf_details
                         )
 
                         # Start a transaction for these
@@ -636,8 +654,14 @@ class DetectorDBConnection:
                                 pick_waveform_details,
                                 common_wf_details,
                             )
+
+                            if is_p:
+                                self.n_P_waveform_storage_entries += 1
+                            else:
+                                self.n_S_waveform_storage_entries += 1
+
                 except Exception as e:
-                    if use_pytables:
+                    if use_pytables and storage_dict is not None:
                         # Rollback the pytables updates if an error occurs
                         for _, chan_storage in storage_dict.items():
                             chan_storage.rollback()
