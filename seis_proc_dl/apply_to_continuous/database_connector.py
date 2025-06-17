@@ -588,7 +588,6 @@ class DetectorDBConnection:
                         wf_end_ind -= i2 - total_npts
                         i2 = total_npts
 
-                    print(i1, i2)
                     pick_cont_data = deepcopy(continuous_data[i1:i2, :])
                     wf_start = cdi.proc_start + timedelta(seconds=(i1 * cdi.dt))
                     wf_end = cdi.proc_start + timedelta(seconds=(i2 * cdi.dt))
@@ -630,7 +629,6 @@ class DetectorDBConnection:
                             for _, chan_storage in prev_storage_dict.items():
                                 chan_storage.start_transaction()
                     #####
-                    print(storage_dict)
                     for det_dict in proc_dldets:
                         # Check if the detection is on the previous day, if so need to check
                         # for existing picks and handle accordingly 
