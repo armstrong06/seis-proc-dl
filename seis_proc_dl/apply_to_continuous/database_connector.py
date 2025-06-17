@@ -462,9 +462,11 @@ class DetectorDBConnection:
         if is_p:
             curr_storage = self.waveform_storage_dict_P
             curr_count = self.n_P_waveform_storage_entries
+            phase = "P"
         else:
             curr_storage = self.waveform_storage_dict_S
             curr_count = self.n_S_waveform_storage_entries
+            phase = "S"
 
         if curr_storage is None or (curr_count > self.MAX_WAVEFORMS_PER_STORAGE):
             if curr_storage is not None:
@@ -475,7 +477,7 @@ class DetectorDBConnection:
             for seed_code, chan_id in self.channel_info.channel_ids.items():
                 # TODO: implement this function
                 storage_number, hdf_file, count = services.get_waveform_storage_number(
-                    session, self.station_id, chan_id, self.MAX_WAVEFORMS_PER_STORAGE
+                    session, chan_id, phase, self.MAX_WAVEFORMS_PER_STORAGE
                 )
                 new_storage[chan_id] = pytables_backend.WaveformStorage(
                     expected_array_length=common_wf_details["expected_array_length"],

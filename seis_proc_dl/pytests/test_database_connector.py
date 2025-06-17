@@ -230,6 +230,7 @@ def db_session_with_3c_stat_loaded(db_session, stat_ex, channel_ex_3c):
     session.commit()
 
     db_conn = DetectorDBConnection(3)  # Create instance
+    db_conn.MAX_WAVEFORMS_PER_STORAGE = 1
 
     patch_session(db_conn)  # Patch `self.Session` on the instance
 
@@ -1837,6 +1838,63 @@ class TestDetectorDBConnection:
             db_conn.close_open_pytables()
             if db_conn.waveform_storage_dict_S is not None:
                 for _, stor in db_conn.waveform_storage_dict_S.items():
+                    os.remove(stor.file_path)
+                    assert not os.path.exists(
+                        stor.file_path
+                    ), "the file was not removed"
+
+    def test_save_picks_from_detections_new_pytable(
+        self, db_session_with_P_picks_and_wfs_pytables, contdatainfo_ex
+    ):
+        try:
+            session, db_conn, params = db_session_with_P_picks_and_wfs_pytables
+            
+            date, metadata = contdatainfo_ex
+            date = date + timedelta(days=1)
+            metadata["original_starttime"] += timedelta(days=1)
+            metadata["original_endtime"] += timedelta(days=1)
+            metadata["previous_appended"] = True
+            metadata["starttime"] += timedelta(days=1)
+            metadata["starttime"] += -timedelta(seconds=10)
+            metadata["npts"] += 10 * metadata["sampling_rate"]
+
+            # Update the info to move to the next date
+            db_conn.save_data_info(date, metadata)
+
+            # Make a new detection
+            ids = db_conn.get_dldet_fk_ids(is_p=True)
+            det = {"sample": 5000, "height": 90, "width": 20, "phase": "P"}
+            det["data_id"] = ids["data"]
+            det["method_id"] = ids["method"]
+            det["inference_id"] = None
+            db_conn.save_detections([det])
+            inserted_dets = services.get_dldetections(
+                session, ids["data"], ids["method"], 0.0
+            )
+            assert len(inserted_dets) == 1, "incorrect number of dets inserted"
+
+            cont_data = np.zeros((int(metadata["npts"]), 3))
+            samples = int(params["seconds_around_pick"] * 100)
+            cont_data[5000 - samples : 5000 + samples + 1] = 5
+
+            db_conn.save_picks_from_detections(
+                pick_thresh=params["pick_thresh"],
+                is_p=True,
+                auth=params["auth"],
+                continuous_data=cont_data,
+                seconds_around_pick=params["seconds_around_pick"],
+                use_pytables=True,
+            )
+
+            for _, stor in db_conn.waveform_storage_dict_P.items():
+                print(stor.file_name)
+                assert stor.file_name[-6:-3] == "001"
+
+        finally:
+            # Clean up
+            db_conn.close_open_pytables()
+            if db_conn.waveform_storage_dict_P is not None:
+                for _, stor in db_conn.waveform_storage_dict_P.items():
                     os.remove(stor.file_path)
                     assert not os.path.exists(
                         stor.file_path
