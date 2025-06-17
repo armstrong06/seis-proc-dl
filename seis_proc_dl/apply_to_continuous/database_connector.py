@@ -220,6 +220,11 @@ class DetectorDBConnection:
                 )
 
                 self.channel_info = ChannelInfo(selected_channels, total_ndays)
+
+        self._reset_waveform_P_storages()
+        if self.ncomps == 3:
+            self._reset_waveform_S_storages()
+            
         return True
 
     def save_data_info(self, date, metadata_dict, error=None):
@@ -486,7 +491,7 @@ class DetectorDBConnection:
             for seed_code, chan_id in self.channel_info.channel_ids.items():
                 # TODO: implement this function
                 storage_number, hdf_file, count = services.get_waveform_storage_number(
-                    session, chan_id, phase, self.MAX_WAVEFORMS_PER_STORAGE
+                    session, chan_id, self.wf_source_id, phase, self.MAX_WAVEFORMS_PER_STORAGE
                 )
                 new_storage[chan_id] = pytables_backend.WaveformStorage(
                     expected_array_length=common_wf_details["expected_array_length"],
@@ -519,6 +524,22 @@ class DetectorDBConnection:
             return new_storage
         else:
             return curr_storage
+
+    def _reset_waveform_P_storages(self):
+        if self.prev_waveform_storage_dict_P is not None:
+            for key, stor in self.prev_waveform_storage_dict_P.items():
+                stor.close()
+
+        self.prev_waveform_storage_dict_P = self.waveform_storage_dict_P
+        self.waveform_storage_dict_P = None
+
+    def _reset_waveform_S_storages(self):
+        if self.prev_waveform_storage_dict_S is not None:
+            for key, stor in self.prev_waveform_storage_dict_S.items():
+                stor.close()
+
+        self.prev_waveform_storage_dict_S = self.waveform_storage_dict_S
+        self.waveform_storage_dict_S = None
 
     def save_picks_from_detections(
         self,
