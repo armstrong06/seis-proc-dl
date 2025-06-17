@@ -551,6 +551,8 @@ class DetectorDBConnection:
                     phase = "S"
                 # Compute the number of samples to grab on either side of the detection
                 cdi = session.get(DailyContDataInfo, data_id)
+                cdi_date = cdi.date 
+                cdi_prev_appended = cdi.prev_appended
                 samples_around_pick = int(seconds_around_pick * cdi.samp_rate)
                 total_npts = len(continuous_data)
                 total_expected_samples = samples_around_pick * 2 + 1
@@ -558,8 +560,52 @@ class DetectorDBConnection:
                 common_wf_details["expected_array_length"] = total_expected_samples
                 common_wf_details["phase"] = phase
                 common_wf_details["data_id"] = data_id
-                prev_storage_dict = None
-                try:
+
+                # Get all detections for the contdatainfo and method greater than the pick_thresh
+                dldets = services.get_dldetections(
+                    session, data_id, method_id, pick_thresh, phase=phase
+                )
+
+                proc_dldets = []
+                # Iterate over the detections
+                for det in dldets:
+                    pick_waveform_details = {}
+
+                    ## Compute the start and end inds for waveforms in pytable
+                    ## Rely on the default values in the storage object
+                    wf_start_ind = 0
+                    wf_end_ind = total_expected_samples
+                    ##
+
+                    # Compute the relevant waveform information for all channels
+                    i1 = det.sample - samples_around_pick
+                    i2 = det.sample + samples_around_pick + 1
+                    if i1 < 0:
+                        wf_start_ind = abs(i1)
+                        i1 = 0
+                    # TODO: Check if this needs a -1
+                    if i2 > total_npts:
+                        wf_end_ind -= i2 - total_npts
+                        i2 = total_npts
+                    pick_cont_data = deepcopy(continuous_data[i1:i2, :])
+                    wf_start = cdi.proc_start + timedelta(seconds=(i1 * cdi.dt))
+                    wf_end = cdi.proc_start + timedelta(seconds=(i2 * cdi.dt))
+                    pick_waveform_details["npts"] = i2 - i1
+                    pick_waveform_details["wf_start"] = wf_start
+                    pick_waveform_details["wf_end"] = wf_end
+                    pick_waveform_details["wf_start_ind"] = wf_start_ind
+                    pick_waveform_details["wf_end_ind"] = wf_end_ind
+                    pick_waveform_details["pick_cont_data"] = pick_cont_data
+                    pick_waveform_details["det_time"] = det.time
+                    pick_waveform_details["det_id"] = det.id
+                    pick_waveform_details["det_phase"] = det.phase
+                    proc_dldets.append(pick_waveform_details)
+
+            session.close()
+
+        try:
+            with self.Session() as session:
+                with session.begin():
                     #### GET THE PYTABLES STORAGE
                     storage_dict = None
                     if use_pytables:
@@ -570,67 +616,23 @@ class DetectorDBConnection:
                         # Start a transaction for these
                         for _, chan_storage in storage_dict.items():
                             chan_storage.start_transaction()
-
-                        if is_p:
-                            prev_storage_dict = self.prev_waveform_storage_dict_P
-                        else:
-                            prev_storage_dict = self.prev_waveform_storage_dict_S
-
-                        # Start a transaction for these
-                        if prev_storage_dict is not None:
-                            for _, chan_storage in prev_storage_dict.items():
-                                chan_storage.start_transaction()
-                        
                     #####
-
-                    # Get all detections for the contdatainfo and method greater than the pick_thresh
-                    dldets = services.get_dldetections(
-                        session, data_id, method_id, pick_thresh, phase=phase
-                    )
-
-                    # Iterate over the detections
-                    for det in dldets:
-                        pick_waveform_details = {}
-
-                        ## Compute the start and end inds for waveforms in pytable
-                        ## Rely on the default values in the storage object
-                        wf_start_ind = 0
-                        wf_end_ind = total_expected_samples
-                        ##
-
-                        # Compute the relevant waveform information for all channels
-                        i1 = det.sample - samples_around_pick
-                        i2 = det.sample + samples_around_pick + 1
-                        if i1 < 0:
-                            wf_start_ind = abs(i1)
-                            i1 = 0
-                        # TODO: Check if this needs a -1
-                        if i2 > total_npts:
-                            wf_end_ind -= i2 - total_npts
-                            i2 = total_npts
-                        pick_cont_data = deepcopy(continuous_data[i1:i2, :])
-                        wf_start = cdi.proc_start + timedelta(seconds=(i1 * cdi.dt))
-                        wf_end = cdi.proc_start + timedelta(seconds=(i2 * cdi.dt))
-                        pick_waveform_details["npts"] = i2 - i1
-                        pick_waveform_details["wf_start"] = wf_start
-                        pick_waveform_details["wf_end"] = wf_end
-                        pick_waveform_details["wf_start_ind"] = wf_start_ind
-                        pick_waveform_details["wf_end_ind"] = wf_end_ind
-                        pick_waveform_details["pick_cont_data"] = pick_cont_data
+                    print(storage_dict)
+                    for det_dict in proc_dldets:
                         # Check if the detection is on the previous day, if so need to check
-                        # for existing picks and handle accordingly
+                        # for existing picks and handle accordingly 
                         insert_new_pick = True
-                        if det.time.date() < cdi.date:
+                        if det_dict["det_time"].date() < cdi_date:
                             assert (
-                                cdi.prev_appended
+                                cdi_prev_appended
                             ), "Previous data was not appended, yet there is a detection on the previous day..."
 
                             insert_new_pick = (
                                 self._potentially_modify_pick_and_waveform(
                                     session,
                                     storage_dict,
-                                    prev_storage_dict,
-                                    det,
+                                    det_dict["det_id"],
+                                    det_dict["det_time"],
                                     pick_waveform_details,
                                     common_wf_details,
                                 )
@@ -642,37 +644,12 @@ class DetectorDBConnection:
                                 session,
                                 self.station_id,
                                 self.seed_code,
-                                det.phase,
-                                det.time,
+                                det_dict["det_phase"],
+                                det_dict["det_time"],
                                 auth,
-                                detid=det.id,
+                                detid=det_dict["det_id"],
                             )
 
-                            # print(wf_end - det.time)
-                            # print(det.time - wf_start)
-                            # expected_start = det.time - timedelta(seconds=seconds_around_pick)
-                            # expected_end = det.time + timedelta(
-                            #     seconds=seconds_around_pick + cdi.dt
-                            # )
-                            # datetimeformat = "%Y-%m-%dT%H:%M:%S.%f"
-                            # print(
-                            #     "START",
-                            #     expected_start.strftime(datetimeformat),
-                            #     wf_start.strftime(datetimeformat),
-                            # )
-                            # print(
-                            #     "END",
-                            #     expected_end.strftime(datetimeformat),
-                            #     wf_end.strftime(datetimeformat),
-                            # )
-                            # assert (
-                            #     wf_start - expected_start
-                            # ).microseconds == 0, "wf_start different than expected"
-                            # assert (
-                            #     wf_end - expected_end
-                            # ).microseconds == 0, "wf_end different than expected"
-
-                            # Iterate over the different channels
                             self._insert_new_waveforms(
                                 session,
                                 storage_dict,
@@ -685,18 +662,15 @@ class DetectorDBConnection:
                                 self.n_P_waveform_storage_entries += 1
                             else:
                                 self.n_S_waveform_storage_entries += 1
+                        
+        except Exception as e:
+            if use_pytables and storage_dict is not None:
+                # Rollback the pytables updates if an error occurs
+                for _, chan_storage in storage_dict.items():
+                    chan_storage.rollback()
+                self.close_open_pytables()
 
-                except Exception as e:
-                    if use_pytables and storage_dict is not None:
-                        # Rollback the pytables updates if an error occurs
-                        for _, chan_storage in storage_dict.items():
-                            chan_storage.rollback()
-                        if prev_storage_dict is not None:
-                            for _, chan_storage in prev_storage_dict.items():
-                                chan_storage.rollback()
-                        self.close_open_pytables()
-
-                    raise e
+            raise e
 
         if use_pytables:
             # Commit the pytables updates if everything went well in the database transaction
