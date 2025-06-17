@@ -587,6 +587,8 @@ class DetectorDBConnection:
                     if i2 > total_npts:
                         wf_end_ind -= i2 - total_npts
                         i2 = total_npts
+
+                    print(i1, i2)
                     pick_cont_data = deepcopy(continuous_data[i1:i2, :])
                     wf_start = cdi.proc_start + timedelta(seconds=(i1 * cdi.dt))
                     wf_end = cdi.proc_start + timedelta(seconds=(i2 * cdi.dt))
@@ -603,6 +605,7 @@ class DetectorDBConnection:
 
             session.close()
 
+        prev_storage_dict = None
         try:
             with self.Session() as session:
                 with session.begin():
@@ -616,6 +619,16 @@ class DetectorDBConnection:
                         # Start a transaction for these
                         for _, chan_storage in storage_dict.items():
                             chan_storage.start_transaction()
+
+                        if is_p:
+                            prev_storage_dict = self.prev_waveform_storage_dict_P
+                        else:
+                            prev_storage_dict = self.prev_waveform_storage_dict_S
+
+                        # Start a transaction for these
+                        if prev_storage_dict is not None:
+                            for _, chan_storage in prev_storage_dict.items():
+                                chan_storage.start_transaction()
                     #####
                     print(storage_dict)
                     for det_dict in proc_dldets:
@@ -630,10 +643,9 @@ class DetectorDBConnection:
                             insert_new_pick = (
                                 self._potentially_modify_pick_and_waveform(
                                     session,
-                                    storage_dict,
-                                    det_dict["det_id"],
-                                    det_dict["det_time"],
-                                    pick_waveform_details,
+                                    storage_dict, 
+                                    prev_storage_dict,
+                                    det_dict,
                                     common_wf_details,
                                 )
                             )
@@ -654,7 +666,7 @@ class DetectorDBConnection:
                                 session,
                                 storage_dict,
                                 pick,
-                                pick_waveform_details,
+                                det_dict,
                                 common_wf_details,
                             )
 
@@ -668,6 +680,9 @@ class DetectorDBConnection:
                 # Rollback the pytables updates if an error occurs
                 for _, chan_storage in storage_dict.items():
                     chan_storage.rollback()
+                if prev_storage_dict is not None:
+                    for _, chan_storage in prev_storage_dict.items():
+                        chan_storage.rollback()
                 self.close_open_pytables()
 
             raise e
@@ -727,14 +742,13 @@ class DetectorDBConnection:
                 )
 
     def _potentially_modify_pick_and_waveform(
-        self,
-        session,
-        storage_dict,
-        prev_storage_dict,
-        detection,
-        pick_waveform_details,
-        common_waveform_details,
-    ):
+            self,
+            session,
+            storage_dict,
+            prev_storage_dict,
+            pick_waveform_details,
+            common_waveform_details,
+        ):
         new_pick_needed = True
         # Check if there are any picks with a ptime close to det.time
         close_picks = services.get_picks(
@@ -742,8 +756,8 @@ class DetectorDBConnection:
             self.station_id,
             self.seed_code,
             common_waveform_details["phase"],
-            min_time=detection.time - timedelta(seconds=0.1),
-            max_time=detection.time + timedelta(seconds=0.1),
+            min_time=pick_waveform_details["det_time"] - timedelta(seconds=0.1),
+            max_time=pick_waveform_details["det_time"] + timedelta(seconds=0.1),
         )
 
         # If there are no close picks, then insert_new_pick = True
@@ -781,8 +795,8 @@ class DetectorDBConnection:
             return new_pick_needed
 
         # If so, update the pick time and detection id, everything else should be the same
-        pick.ptime = detection.time
-        pick.detid = detection.id
+        pick.ptime = pick_waveform_details["det_time"]
+        pick.detid = pick_waveform_details["det_id"]
 
         # This will iterate over Waveform if not using pytables and WaveformInfo otherwise
         for wf in close_wfs:
