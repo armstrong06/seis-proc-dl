@@ -1370,6 +1370,7 @@ class TestDetectorDBConnection:
                     row = db_conn.waveform_storage_dict_P[wf_info.chan_id].select_row(
                         wf_info.id
                     )
+                    assert wf_info.hdf_file.name[-6:-3] == "000"
                     wfs.append(row["data"][row["start_ind"] : row["end_ind"]])
 
                 assert det.sample in [1000, 30000, 8639500], "incorrect dets saved"
@@ -1536,6 +1537,7 @@ class TestDetectorDBConnection:
                     row = db_conn.waveform_storage_dict_S[wf_info.chan_id].select_row(
                         wf_info.id
                     )
+                    assert wf_info.hdf_file.name[-6:-3] == "000"
                     wfs.append(row["data"][row["start_ind"] : row["end_ind"]])
 
                 assert det.sample in [1000, 30000, 8639500], "incorrect dets saved"
@@ -1699,9 +1701,10 @@ class TestDetectorDBConnection:
 
             wfs = []
             for wf_info in wf_infos:
-                row = db_conn.waveform_storage_dict_P[wf_info.chan_id].select_row(
+                row = db_conn.prev_waveform_storage_dict_P[wf_info.chan_id].select_row(
                     wf_info.id
                 )
+                assert wf_info.hdf_file.name[-6:-3] == "000"
                 wfs.append(row["data"][row["start_ind"] : row["end_ind"]])
             assert len(wfs) == 3, "invalid wf size"
 
@@ -1805,9 +1808,10 @@ class TestDetectorDBConnection:
 
             wfs = []
             for wf_info in wf_infos:
-                row = db_conn.waveform_storage_dict_S[wf_info.chan_id].select_row(
+                row = db_conn.prev_waveform_storage_dict_S[wf_info.chan_id].select_row(
                     wf_info.id
                 )
+                assert wf_info.hdf_file.name[-6:-3] == "000"
                 wfs.append(row["data"][row["start_ind"] : row["end_ind"]])
             assert len(wfs) == 3, "invalid wf size"
 
@@ -1887,7 +1891,7 @@ class TestDetectorDBConnection:
             )
 
             for _, stor in db_conn.waveform_storage_dict_P.items():
-                print(stor.file_name)
+                #print(stor.file_name)
                 assert stor.file_name[-6:-3] == "001"
 
         finally:
@@ -3239,7 +3243,7 @@ class TestMultiSWAGPickerDB:
             inserted_corr[0].if_high == trim_results["if_high"][0]
         ), "incorrect if_high"
         expected_pytable_file = (
-            f"repicker{sp.db_conn.repicker_method_id}_P_2010-02-01_2010-02-02_N120.h5"
+            f"repicker{sp.db_conn.repicker_method_id:02d}_P_2010-02-01_2010-02-02_N120.h5"
         )
         assert inserted_corr[0].preds_hdf_file.name == expected_pytable_file
         cis = inserted_corr[0].cis

@@ -68,6 +68,8 @@ class DetectorDBConnection:
 
         # BasePyTables storage
         # Wavefroms will need a storage for each channel - keep them in dicts
+        self.prev_waveform_storage_dict_P = None
+        self.prev_waveform_storage_dict_S = None
         self.waveform_storage_dict_P = None
         self.waveform_storage_dict_S = None
         self.n_P_waveform_storage_entries = 0
@@ -460,18 +462,25 @@ class DetectorDBConnection:
     def _get_waveform_storages(self, session, is_p, common_wf_details):
 
         if is_p:
+            prev_storage = self.prev_waveform_storage_dict_P
             curr_storage = self.waveform_storage_dict_P
             curr_count = self.n_P_waveform_storage_entries
             phase = "P"
         else:
+            prev_storage = self.prev_waveform_storage_dict_S
             curr_storage = self.waveform_storage_dict_S
             curr_count = self.n_S_waveform_storage_entries
             phase = "S"
 
-        if curr_storage is None or (curr_count >= self.MAX_WAVEFORMS_PER_STORAGE):
-            if curr_storage is not None:
-                for key, stor in curr_storage.items():
+        if curr_storage is None or (curr_count > self.MAX_WAVEFORMS_PER_STORAGE):
+            if prev_storage is not None:
+                for key, stor in prev_storage.items():
                     stor.close()
+
+
+            prev_storage = curr_storage
+            curr_storage = None
+            
 
             new_storage = {}
             for seed_code, chan_id in self.channel_info.channel_ids.items():
@@ -501,9 +510,11 @@ class DetectorDBConnection:
             if is_p:
                 self.waveform_storage_dict_P = new_storage
                 self.n_P_waveform_storage_entries = count
+                self.prev_waveform_storage_dict_P = prev_storage
             else:
                 self.waveform_storage_dict_S = new_storage
                 self.n_S_waveform_storage_entries = count
+                self.prev_waveform_storage_dict_S = prev_storage
 
             return new_storage
         else:
@@ -833,6 +844,8 @@ class DetectorDBConnection:
                     phase = "S"
                 # Compute the number of samples to grab on either side of the detection
                 cdi = session.get(DailyContDataInfo, data_id)
+                cdi_date = cdi.date 
+                cdi_prev_appended = cdi.prev_appended
                 samples_around_pick = int(seconds_around_pick * cdi.samp_rate)
                 total_npts = len(continuous_data)
                 total_expected_samples = samples_around_pick * 2 + 1
@@ -840,7 +853,54 @@ class DetectorDBConnection:
                 common_wf_details["expected_array_length"] = total_expected_samples
                 common_wf_details["phase"] = phase
                 common_wf_details["data_id"] = data_id
-                try:
+
+                # Get all detections for the contdatainfo and method greater than the pick_thresh
+                dldets = services.get_dldetections(
+                    session, data_id, method_id, pick_thresh, phase=phase
+                )
+
+                proc_dldets = []
+                # Iterate over the detections
+                for det in dldets:
+                    pick_waveform_details = {}
+
+                    ## Compute the start and end inds for waveforms in pytable
+                    ## Rely on the default values in the storage object
+                    wf_start_ind = 0
+                    wf_end_ind = total_expected_samples
+                    ##
+
+                    # Compute the relevant waveform information for all channels
+                    i1 = det.sample - samples_around_pick
+                    i2 = det.sample + samples_around_pick + 1
+                    if i1 < 0:
+                        wf_start_ind = abs(i1)
+                        i1 = 0
+                    # TODO: Check if this needs a -1
+                    if i2 > total_npts:
+                        wf_end_ind -= i2 - total_npts
+                        i2 = total_npts
+
+                    pick_cont_data = deepcopy(continuous_data[i1:i2, :])
+                    wf_start = cdi.proc_start + timedelta(seconds=(i1 * cdi.dt))
+                    wf_end = cdi.proc_start + timedelta(seconds=(i2 * cdi.dt))
+                    pick_waveform_details["npts"] = i2 - i1
+                    pick_waveform_details["wf_start"] = wf_start
+                    pick_waveform_details["wf_end"] = wf_end
+                    pick_waveform_details["wf_start_ind"] = wf_start_ind
+                    pick_waveform_details["wf_end_ind"] = wf_end_ind
+                    pick_waveform_details["pick_cont_data"] = pick_cont_data
+                    pick_waveform_details["det_time"] = det.time
+                    pick_waveform_details["det_id"] = det.id
+                    pick_waveform_details["det_phase"] = det.phase
+                    proc_dldets.append(pick_waveform_details)
+
+            session.close()
+
+        prev_storage_dict = None
+        try:
+            with self.Session() as session:
+                with session.begin():
                     #### GET THE PYTABLES STORAGE
                     storage_dict = None
                     if use_pytables:
@@ -851,56 +911,32 @@ class DetectorDBConnection:
                         # Start a transaction for these
                         for _, chan_storage in storage_dict.items():
                             chan_storage.start_transaction()
+
+                        if is_p:
+                            prev_storage_dict = self.prev_waveform_storage_dict_P
+                        else:
+                            prev_storage_dict = self.prev_waveform_storage_dict_S
+
+                        # Start a transaction for these
+                        if prev_storage_dict is not None:
+                            for _, chan_storage in prev_storage_dict.items():
+                                chan_storage.start_transaction()
                     #####
-
-                    # Get all detections for the contdatainfo and method greater than the pick_thresh
-                    dldets = services.get_dldetections(
-                        session, data_id, method_id, pick_thresh, phase=phase
-                    )
-
-                    # Iterate over the detections
-                    for det in dldets:
-                        pick_waveform_details = {}
-
-                        ## Compute the start and end inds for waveforms in pytable
-                        ## Rely on the default values in the storage object
-                        wf_start_ind = 0
-                        wf_end_ind = total_expected_samples
-                        ##
-
-                        # Compute the relevant waveform information for all channels
-                        i1 = det.sample - samples_around_pick
-                        i2 = det.sample + samples_around_pick + 1
-                        if i1 < 0:
-                            wf_start_ind = abs(i1)
-                            i1 = 0
-                        # TODO: Check if this needs a -1
-                        if i2 > total_npts:
-                            wf_end_ind -= i2 - total_npts
-                            i2 = total_npts
-                        pick_cont_data = deepcopy(continuous_data[i1:i2, :])
-                        wf_start = cdi.proc_start + timedelta(seconds=(i1 * cdi.dt))
-                        wf_end = cdi.proc_start + timedelta(seconds=(i2 * cdi.dt))
-                        pick_waveform_details["npts"] = i2 - i1
-                        pick_waveform_details["wf_start"] = wf_start
-                        pick_waveform_details["wf_end"] = wf_end
-                        pick_waveform_details["wf_start_ind"] = wf_start_ind
-                        pick_waveform_details["wf_end_ind"] = wf_end_ind
-                        pick_waveform_details["pick_cont_data"] = pick_cont_data
+                    for det_dict in proc_dldets:
                         # Check if the detection is on the previous day, if so need to check
-                        # for existing picks and handle accordingly
+                        # for existing picks and handle accordingly 
                         insert_new_pick = True
-                        if det.time.date() < cdi.date:
+                        if det_dict["det_time"].date() < cdi_date:
                             assert (
-                                cdi.prev_appended
+                                cdi_prev_appended
                             ), "Previous data was not appended, yet there is a detection on the previous day..."
 
                             insert_new_pick = (
                                 self._potentially_modify_pick_and_waveform(
                                     session,
-                                    storage_dict,
-                                    det,
-                                    pick_waveform_details,
+                                    storage_dict, 
+                                    prev_storage_dict,
+                                    det_dict,
                                     common_wf_details,
                                 )
                             )
@@ -911,42 +947,17 @@ class DetectorDBConnection:
                                 session,
                                 self.station_id,
                                 self.seed_code,
-                                det.phase,
-                                det.time,
+                                det_dict["det_phase"],
+                                det_dict["det_time"],
                                 auth,
-                                detid=det.id,
+                                detid=det_dict["det_id"],
                             )
 
-                            # print(wf_end - det.time)
-                            # print(det.time - wf_start)
-                            # expected_start = det.time - timedelta(seconds=seconds_around_pick)
-                            # expected_end = det.time + timedelta(
-                            #     seconds=seconds_around_pick + cdi.dt
-                            # )
-                            # datetimeformat = "%Y-%m-%dT%H:%M:%S.%f"
-                            # print(
-                            #     "START",
-                            #     expected_start.strftime(datetimeformat),
-                            #     wf_start.strftime(datetimeformat),
-                            # )
-                            # print(
-                            #     "END",
-                            #     expected_end.strftime(datetimeformat),
-                            #     wf_end.strftime(datetimeformat),
-                            # )
-                            # assert (
-                            #     wf_start - expected_start
-                            # ).microseconds == 0, "wf_start different than expected"
-                            # assert (
-                            #     wf_end - expected_end
-                            # ).microseconds == 0, "wf_end different than expected"
-
-                            # Iterate over the different channels
                             self._insert_new_waveforms(
                                 session,
                                 storage_dict,
                                 pick,
-                                pick_waveform_details,
+                                det_dict,
                                 common_wf_details,
                             )
 
@@ -954,15 +965,18 @@ class DetectorDBConnection:
                                 self.n_P_waveform_storage_entries += 1
                             else:
                                 self.n_S_waveform_storage_entries += 1
+                        
+        except Exception as e:
+            if use_pytables and storage_dict is not None:
+                # Rollback the pytables updates if an error occurs
+                for _, chan_storage in storage_dict.items():
+                    chan_storage.rollback()
+                if prev_storage_dict is not None:
+                    for _, chan_storage in prev_storage_dict.items():
+                        chan_storage.rollback()
+                self.close_open_pytables()
 
-                except Exception as e:
-                    if use_pytables and storage_dict is not None:
-                        # Rollback the pytables updates if an error occurs
-                        for _, chan_storage in storage_dict.items():
-                            chan_storage.rollback()
-                        self.close_open_pytables()
-
-                    raise e
+            raise e
 
         if use_pytables:
             # Commit the pytables updates if everything went well in the database transaction
@@ -1107,13 +1121,13 @@ class DetectorDBConnection:
     #     return new_pick_needed
 
     def _potentially_modify_pick_and_waveform(
-        self,
-        session,
-        storage_dict,
-        detection,
-        pick_waveform_details,
-        common_waveform_details,
-    ):
+            self,
+            session,
+            storage_dict,
+            prev_storage_dict,
+            pick_waveform_details,
+            common_waveform_details,
+        ):
         new_pick_needed = True
         # Check if there are any picks with a ptime close to det.time
         close_picks = services.get_picks(
@@ -1121,8 +1135,8 @@ class DetectorDBConnection:
             self.station_id,
             self.seed_code,
             common_waveform_details["phase"],
-            min_time=detection.time - timedelta(seconds=0.1),
-            max_time=detection.time + timedelta(seconds=0.1),
+            min_time=pick_waveform_details["det_time"] - timedelta(seconds=0.1),
+            max_time=pick_waveform_details["det_time"] + timedelta(seconds=0.1),
         )
 
         # If there are no close picks, then insert_new_pick = True
@@ -1160,8 +1174,8 @@ class DetectorDBConnection:
             return new_pick_needed
 
         # If so, update the pick time and detection id, everything else should be the same
-        pick.ptime = detection.time
-        pick.detid = detection.id
+        pick.ptime = pick_waveform_details["det_time"]
+        pick.detid = pick_waveform_details["det_id"]
 
         # This will iterate over Waveform if not using pytables and WaveformInfo otherwise
         for wf in close_wfs:
@@ -1184,9 +1198,16 @@ class DetectorDBConnection:
                 wf_end_ind = pick_waveform_details["wf_end_ind"]
                 wf_data[wf_start_ind:wf_end_ind] = pick_cont_data[:, chan_ind]
                 # Modify the pytable entry
-                storage_dict[wf.chan_id].modify(
-                    wf.id, wf_data, wf_start_ind, wf_end_ind
-                )
+                if wf.chan_id in storage_dict.keys():
+                    storage_dict[wf.chan_id].modify(
+                        wf.id, wf_data, wf_start_ind, wf_end_ind
+                    )
+                elif prev_storage_dict is not None and wf.chan_id in prev_storage_dict.keys():
+                    prev_storage_dict[wf.chan_id].modify(
+                        wf.id, wf_data, wf_start_ind, wf_end_ind
+                    )
+                else:
+                    raise ValueError("wf.chan_id not in the previous or current storage dict")
             # TODO: Might want to update this in case the channel switched between days...
             # But I think it makes sense to still assign it to the previous day's channel
             # wf.chan_id = self.channel_info.channel_ids[seed_code]
@@ -1207,6 +1228,12 @@ class DetectorDBConnection:
             for key, stor in self.waveform_storage_dict_S.items():
                 stor.close()
 
+        if self.prev_waveform_storage_dict_P is not None:
+            for key, stor in self.prev_waveform_storage_dict_P.items():
+                stor.close()
+        if self.prev_waveform_storage_dict_S is not None:
+            for key, stor in self.prev_waveform_storage_dict_S.items():
+                stor.close()
 
 class SwagPickerDBConnection:
 
