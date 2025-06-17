@@ -68,6 +68,8 @@ class DetectorDBConnection:
 
         # BasePyTables storage
         # Wavefroms will need a storage for each channel - keep them in dicts
+        self.prev_waveform_storage_dict_P = None
+        self.prev_waveform_storage_dict_S = None
         self.waveform_storage_dict_P = None
         self.waveform_storage_dict_S = None
         self.n_P_waveform_storage_entries = 0
@@ -460,18 +462,25 @@ class DetectorDBConnection:
     def _get_waveform_storages(self, session, is_p, common_wf_details):
 
         if is_p:
+            prev_storage = self.prev_waveform_storage_dict_P
             curr_storage = self.waveform_storage_dict_P
             curr_count = self.n_P_waveform_storage_entries
             phase = "P"
         else:
+            prev_storage = self.prev_waveform_storage_dict_S
             curr_storage = self.waveform_storage_dict_S
             curr_count = self.n_S_waveform_storage_entries
             phase = "S"
 
         if curr_storage is None or (curr_count > self.MAX_WAVEFORMS_PER_STORAGE):
-            if curr_storage is not None:
-                for key, stor in curr_storage.items():
+            if prev_storage is not None:
+                for key, stor in prev_storage.items():
                     stor.close()
+
+
+            prev_storage = curr_storage
+            curr_storage = None
+            
 
             new_storage = {}
             for seed_code, chan_id in self.channel_info.channel_ids.items():
@@ -501,9 +510,11 @@ class DetectorDBConnection:
             if is_p:
                 self.waveform_storage_dict_P = new_storage
                 self.n_P_waveform_storage_entries = count
+                self.prev_waveform_storage_dict_P = prev_storage
             else:
                 self.waveform_storage_dict_S = new_storage
                 self.n_S_waveform_storage_entries = count
+                self.prev_waveform_storage_dict_S = prev_storage
 
             return new_storage
         else:
@@ -547,6 +558,7 @@ class DetectorDBConnection:
                 common_wf_details["expected_array_length"] = total_expected_samples
                 common_wf_details["phase"] = phase
                 common_wf_details["data_id"] = data_id
+                prev_storage_dict = None
                 try:
                     #### GET THE PYTABLES STORAGE
                     storage_dict = None
@@ -558,6 +570,17 @@ class DetectorDBConnection:
                         # Start a transaction for these
                         for _, chan_storage in storage_dict.items():
                             chan_storage.start_transaction()
+
+                        if is_p:
+                            prev_storage_dict = self.prev_waveform_storage_dict_P
+                        else:
+                            prev_storage_dict = self.prev_waveform_storage_dict_S
+
+                        # Start a transaction for these
+                        if prev_storage_dict is not None:
+                            for _, chan_storage in prev_storage_dict.items():
+                                chan_storage.start_transaction()
+                        
                     #####
 
                     # Get all detections for the contdatainfo and method greater than the pick_thresh
@@ -606,6 +629,7 @@ class DetectorDBConnection:
                                 self._potentially_modify_pick_and_waveform(
                                     session,
                                     storage_dict,
+                                    prev_storage_dict,
                                     det,
                                     pick_waveform_details,
                                     common_wf_details,
@@ -667,6 +691,9 @@ class DetectorDBConnection:
                         # Rollback the pytables updates if an error occurs
                         for _, chan_storage in storage_dict.items():
                             chan_storage.rollback()
+                        if prev_storage_dict is not None:
+                            for _, chan_storage in prev_storage_dict.items():
+                                chan_storage.rollback()
                         self.close_open_pytables()
 
                     raise e
@@ -729,6 +756,7 @@ class DetectorDBConnection:
         self,
         session,
         storage_dict,
+        prev_storage_dict,
         detection,
         pick_waveform_details,
         common_waveform_details,
@@ -803,9 +831,16 @@ class DetectorDBConnection:
                 wf_end_ind = pick_waveform_details["wf_end_ind"]
                 wf_data[wf_start_ind:wf_end_ind] = pick_cont_data[:, chan_ind]
                 # Modify the pytable entry
-                storage_dict[wf.chan_id].modify(
-                    wf.id, wf_data, wf_start_ind, wf_end_ind
-                )
+                if wf.chan_id in storage_dict.keys():
+                    storage_dict[wf.chan_id].modify(
+                        wf.id, wf_data, wf_start_ind, wf_end_ind
+                    )
+                elif prev_storage_dict is not None and wf.chan_id in prev_storage_dict.keys():
+                    prev_storage_dict[wf.chan_id].modify(
+                        wf.id, wf_data, wf_start_ind, wf_end_ind
+                    )
+                else:
+                    raise ValueError("wf.chan_id not in the previous or current storage dict")
             # TODO: Might want to update this in case the channel switched between days...
             # But I think it makes sense to still assign it to the previous day's channel
             # wf.chan_id = self.channel_info.channel_ids[seed_code]
@@ -826,6 +861,12 @@ class DetectorDBConnection:
             for key, stor in self.waveform_storage_dict_S.items():
                 stor.close()
 
+        if self.prev_waveform_storage_dict_P is not None:
+            for key, stor in self.prev_waveform_storage_dict_P.items():
+                stor.close()
+        if self.prev_waveform_storage_dict_S is not None:
+            for key, stor in self.prev_waveform_storage_dict_S.items():
+                stor.close()
 
 class SwagPickerDBConnection:
 
