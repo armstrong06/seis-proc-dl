@@ -224,7 +224,6 @@ class DetectorDBConnection:
         self._reset_waveform_P_storages()
         if self.ncomps == 3:
             self._reset_waveform_S_storages()
-            
         return True
 
     def save_data_info(self, date, metadata_dict, error=None):
@@ -465,7 +464,6 @@ class DetectorDBConnection:
         return detout_id
 
     def _get_waveform_storages(self, session, is_p, common_wf_details):
-
         if is_p:
             prev_storage = self.prev_waveform_storage_dict_P
             curr_storage = self.waveform_storage_dict_P
@@ -478,15 +476,14 @@ class DetectorDBConnection:
             phase = "S"
 
         if curr_storage is None or (curr_count >= self.MAX_WAVEFORMS_PER_STORAGE):
-            if prev_storage is not None:
-                for key, stor in prev_storage.items():
-                    stor.close()
+            if curr_storage is not None:
+                if prev_storage is not None:
+                    for key, stor in prev_storage.items():
+                        stor.close()
 
-
-            prev_storage = curr_storage
-            curr_storage = None
+                prev_storage = curr_storage
+                curr_storage = None
             
-
             new_storage = {}
             for seed_code, chan_id in self.channel_info.channel_ids.items():
                 # TODO: implement this function
@@ -838,7 +835,7 @@ class DetectorDBConnection:
                 wf_end_ind = pick_waveform_details["wf_end_ind"]
                 wf_data[wf_start_ind:wf_end_ind] = pick_cont_data[:, chan_ind]
                 # Modify the pytable entry
-                if wf.chan_id in storage_dict.keys():
+                if wf.chan_id in storage_dict.keys() and storage_dict[wf.chan_id].file_name == wf.hdf_file.name:
                     storage_dict[wf.chan_id].modify(
                         wf.id, wf_data, wf_start_ind, wf_end_ind
                     )

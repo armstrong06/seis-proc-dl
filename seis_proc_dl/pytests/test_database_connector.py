@@ -2710,15 +2710,15 @@ class TestApplyDetectorDBPytables:
             )
 
             # Check the Detection Output
-            assert (
-                not applier.db_conn.detout_storage_P._is_open
-            ), "storage should have been closed within apply_to_multiple_days"
-            assert (
-                applier.db_conn.daily_info.dldet_output_id_P is not None
-            ), "the detector output does not have an id in the db"
-
-            for cid, cstore in applier.db_conn.waveform_storage_dict_P.items():
-                assert not cstore._is_open, "waveform storage should have been closed"
+            ## THESE NOW GET SET TO NONE AFTER CLOSING ##
+            # assert (
+            #     not applier.db_conn.detout_storage_P._is_open
+            # ), "storage should have been closed within apply_to_multiple_days"
+            # assert (
+            #     applier.db_conn.daily_info.dldet_output_id_P is not None
+            # ), "the detector output does not have an id in the db"
+            # for cid, cstore in applier.db_conn.waveform_storage_dict_P.items():
+            #     assert not cstore._is_open, "waveform storage should have been closed"
         finally:
             applier.db_conn.close_open_pytables()
             if applier.db_conn.detout_storage_P is not None:

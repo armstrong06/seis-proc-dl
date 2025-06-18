@@ -103,6 +103,7 @@ class ApplyDetector:
         self.db_conn = None
         if config.database is not None:
             self.db_conn = DetectorDBConnection(ncomps, session_factory=session_factory)
+            logger.debug(f"Using MAX_WAVEFORMS_PER_STORAGE = {self.db_conn.MAX_WAVEFORMS_PER_STORAGE}")
             self.use_pytables = config.database.use_pytables
             self.wf_seconds_around_pick = config.database.wf_seconds_around_pick
             self.db_pick_author = config.database.pick_author
