@@ -235,6 +235,7 @@ def db_session_with_3c_stat_loaded(db_session, stat_ex, channel_ex_3c):
     patch_session(db_conn)  # Patch `self.Session` on the instance
 
     start, end = db_conn.get_channel_dates(
+        session,
         datetime.strptime("2011-09-10T00:00:00.00", datetimeformat),
         "JK",
         "TST",
@@ -251,6 +252,7 @@ class TestDetectorDBConnection:
         session, db_conn = db_session_with_3c_stat_loaded
 
         start, end = db_conn.get_channel_dates(
+            session,
             datetime.strptime("2011-09-10T00:00:00.00", datetimeformat),
             "JK",
             "TST",
@@ -279,7 +281,7 @@ class TestDetectorDBConnection:
 
         patch_session(db_conn)  # Patch `self.Session` on the instance
         start, end = db_conn.get_channel_dates(
-            datetime(2023, 1, 1), "WY", "YMV", "01", "HH"
+            session, datetime(2023, 1, 1), "WY", "YMV", "01", "HH"
         )
 
         assert start == datetime(2023, 8, 10, 0, 0, 0), "invalid start date"
@@ -291,7 +293,7 @@ class TestDetectorDBConnection:
 
         patch_session(db_conn)  # Patch `self.Session` on the instance
         start, end = db_conn.get_channel_dates(
-            datetime(2023, 1, 1), "WY", "YJC", "01", "HH"
+            session, datetime(2023, 1, 1), "WY", "YJC", "01", "HH"
         )
 
         assert start == datetime(2023, 8, 8, 14, 0, 0), "invalid start date"
@@ -303,6 +305,7 @@ class TestDetectorDBConnection:
         patch_session(db_conn)  # Patch `self.Session` on the instance
 
         start, end = db_conn.get_channel_dates(
+            session,
             datetime.strptime("2012-10-10T00:00:00.00", datetimeformat),
             "MB",
             "QLMT",
@@ -331,10 +334,10 @@ class TestDetectorDBConnection:
         session, db_conn = db_session_with_3c_stat_loaded
 
         db_conn.add_waveform_source(
-            "TEST-extracted", "Extracted from DataLoader.continuous_data"
+            session, "TEST-extracted", "Extracted from DataLoader.continuous_data"
         )
-        db_conn.add_detection_method("TEST-P", "test method", "data/path/P", "P")
-        db_conn.add_detection_method("TEST-S", "test method", "data/path/S", "S")
+        db_conn.add_detection_method(session, "TEST-P", "test method", "data/path/P", "P")
+        db_conn.add_detection_method(session, "TEST-S", "test method", "data/path/S", "S")
 
         return session, db_conn
 
@@ -383,7 +386,7 @@ class TestDetectorDBConnection:
     def test_update_channels_invalid(self, db_session_with_3c_stat_loaded):
         session, db_conn = db_session_with_3c_stat_loaded
         date = datetime.strptime("2013-04-01", dateformat)
-        db_conn.update_channels(date)
+        db_conn.update_channels(session, date)
         assert db_conn.channel_info is None, "channel_info should be None"
         # assert (
         #     db_conn.channel_info.ondate is None
@@ -395,7 +398,7 @@ class TestDetectorDBConnection:
     def test_update_channels(self, db_session_with_3c_stat_loaded):
         session, db_conn = db_session_with_3c_stat_loaded
         date = datetime.strptime("2011-09-11", dateformat)
-        db_conn.update_channels(date)
+        db_conn.update_channels(session, date)
         assert db_conn.channel_info.ondate == datetime.strptime(
             "2011-09-11T00:00:00.00", datetimeformat
         ), "invalid ondate"
@@ -407,7 +410,7 @@ class TestDetectorDBConnection:
         session, db_conn = db_session_with_3c_stat_loaded
 
         new_date = datetime.strptime("2011-09-10", dateformat)
-        db_conn.start_new_day(new_date)
+        db_conn.start_new_day(session, new_date)
         assert (
             db_conn.daily_info.date == new_date
         ), "invalid date in DailyDetectionDBInfo"
@@ -422,7 +425,7 @@ class TestDetectorDBConnection:
         session, db_conn = db_session_with_3c_stat_loaded
 
         new_date = datetime.strptime("2011-09-11", dateformat)
-        db_conn.start_new_day(new_date)
+        db_conn.start_new_day(session, new_date)
         assert (
             db_conn.daily_info.date == new_date
         ), "invalid date in DailyDetectionDBInfo"
@@ -437,7 +440,7 @@ class TestDetectorDBConnection:
         session, db_conn = db_session_with_3c_stat_loaded
 
         new_date = datetime.strptime("2013-04-01", dateformat)
-        db_conn.start_new_day(new_date)
+        db_conn.start_new_day(session, new_date)
         assert (
             db_conn.daily_info.date == new_date
         ), "invalid date in DailyDetectionDBInfo"
@@ -451,7 +454,7 @@ class TestDetectorDBConnection:
     ):
         session, db_conn = db_session_with_detection_methods
         new_date, metadata_dict = contdatainfo_ex
-        db_conn.save_data_info(new_date, metadata_dict)
+        db_conn.save_data_info(session, new_date, metadata_dict)
         return session, db_conn
 
     def test_save_data_info(self, db_session_with_saved_contdatainfo, contdatainfo_ex):
@@ -477,7 +480,7 @@ class TestDetectorDBConnection:
         new_date = datetime.strptime("2011-09-10", dateformat)
         metadata_dict = None
         error = "no_data"
-        db_conn.save_data_info(new_date, metadata_dict, error=error)
+        db_conn.save_data_info(session, new_date, metadata_dict, error=error)
         assert (
             db_conn.daily_info.date == new_date
         ), "invalid date in DailyDetectionDBInfo"
@@ -498,7 +501,7 @@ class TestDetectorDBConnection:
         session, db_conn = db_session_with_3c_stat_loaded
         new_date, metadata_dict = contdatainfo_ex
         error = "insufficient_data"
-        db_conn.save_data_info(new_date, metadata_dict, error=error)
+        db_conn.save_data_info(session, new_date, metadata_dict, error=error)
 
         assert (
             db_conn.daily_info.date == new_date
@@ -527,7 +530,7 @@ class TestDetectorDBConnection:
         new_date, metadata_dict = contdatainfo_ex
 
         # This should not throw any error because the duplicate rows are the same
-        db_conn.save_data_info(new_date, metadata_dict)
+        db_conn.save_data_info(session, new_date, metadata_dict)
 
     def test_save_data_info_duplicate_nonidentical_entry(
         self, db_session_with_saved_contdatainfo, contdatainfo_ex
@@ -540,7 +543,7 @@ class TestDetectorDBConnection:
 
         # This should throw any error because the duplicate rows are the different
         with pytest.raises(ValueError):
-            db_conn.save_data_info(new_date, metadata_dict)
+            db_conn.save_data_info(session, new_date, metadata_dict)
 
     def test_save_data_info_duplicate_nonidentical_entry_error(
         self, db_session_with_saved_contdatainfo, contdatainfo_ex
@@ -550,7 +553,7 @@ class TestDetectorDBConnection:
 
         # This should throw any error because the duplicate rows are the different
         with pytest.raises(ValueError):
-            db_conn.save_data_info(new_date, None, error="no_data")
+            db_conn.save_data_info(session, new_date, None, error="no_data")
 
     @pytest.fixture
     def multi_channel_gaps_ex(self, close_gaps_ex, simple_gaps_ex):
@@ -625,7 +628,7 @@ class TestDetectorDBConnection:
         session, db_conn = db_session_with_saved_contdatainfo
         gaps = multi_channel_gaps_ex
 
-        db_conn.format_and_save_gaps(gaps, 5)
+        db_conn.format_and_save_gaps(session, gaps, 5)
         gaps_E = services.get_gaps(
             session,
             db_conn.channel_info.channel_ids["HHE"],
@@ -654,7 +657,7 @@ class TestDetectorDBConnection:
         session, db_conn = db_session_with_saved_contdatainfo
         gaps = []
 
-        db_conn.format_and_save_gaps(gaps, 5)
+        db_conn.format_and_save_gaps(session, gaps, 5)
         gaps_E = services.get_gaps(
             session,
             db_conn.channel_info.channel_ids["HHE"],
@@ -675,7 +678,7 @@ class TestDetectorDBConnection:
         session, db_conn = db_session_with_saved_contdatainfo
         gaps = None
 
-        db_conn.format_and_save_gaps(gaps, 5)
+        db_conn.format_and_save_gaps(session, gaps, 5)
         gaps_E = services.get_gaps(
             session,
             db_conn.channel_info.channel_ids["HHE"],
@@ -724,7 +727,7 @@ class TestDetectorDBConnection:
             det["data_id"] = ids["data"]
             det["method_id"] = ids["method"]
 
-        db_conn.save_detections(det_list)
+        db_conn.save_detections(session, det_list)
 
         return session, db_conn
 
@@ -756,6 +759,7 @@ class TestDetectorDBConnection:
         cont_data[(metadata["npts"] - 500) - samples : metadata["npts"]] = 4
 
         db_conn.save_picks_from_detections(
+            session,
             pick_thresh=pick_thresh,
             is_p=True,
             auth=auth,
@@ -904,7 +908,7 @@ class TestDetectorDBConnection:
         # print(date, metadata)
 
         # Updat the info to move to the next date
-        db_conn.save_data_info(date, metadata)
+        db_conn.save_data_info(session, date, metadata)
 
         # Make a new detection that is in the previous day's data
         ids = db_conn.get_dldet_fk_ids(is_p=True)
@@ -912,7 +916,7 @@ class TestDetectorDBConnection:
         det["data_id"] = ids["data"]
         det["method_id"] = ids["method"]
         det["inference_id"] = None
-        db_conn.save_detections([det])
+        db_conn.save_detections(session, [det])
         inserted_dets = services.get_dldetections(
             session, ids["data"], ids["method"], 0.0
         )
@@ -936,6 +940,7 @@ class TestDetectorDBConnection:
         cont_data[0 : 502 + samples + 1] = 5
 
         db_conn.save_picks_from_detections(
+            session,
             pick_thresh=params["pick_thresh"],
             is_p=True,
             auth=params["auth"],
@@ -1002,7 +1007,7 @@ class TestDetectorDBConnection:
             det["data_id"] = ids["data"]
             det["method_id"] = ids["method"]
 
-        db_conn.save_detections(det_list)
+        db_conn.save_detections(session, det_list)
 
         return session, db_conn
 
@@ -1025,6 +1030,7 @@ class TestDetectorDBConnection:
         cont_data[(metadata["npts"] - 500) - samples : metadata["npts"]] = 4
 
         db_conn.save_picks_from_detections(
+            session,
             pick_thresh=pick_thresh,
             is_p=False,
             auth=auth,
@@ -1061,7 +1067,7 @@ class TestDetectorDBConnection:
         # print(date, metadata)
 
         # Updat the info to move to the next date
-        db_conn.save_data_info(date, metadata)
+        db_conn.save_data_info(session, date, metadata)
 
         # Make a new detection that is in the previous day's data
         ids = db_conn.get_dldet_fk_ids(is_p=False)
@@ -1069,7 +1075,7 @@ class TestDetectorDBConnection:
         det["data_id"] = ids["data"]
         det["method_id"] = ids["method"]
         det["inference_id"] = None
-        db_conn.save_detections([det])
+        db_conn.save_detections(session, [det])
         inserted_dets = services.get_dldetections(
             session, ids["data"], ids["method"], 0.0
         )
@@ -1080,6 +1086,7 @@ class TestDetectorDBConnection:
         cont_data[0 : 502 + samples + 1] = 5
 
         db_conn.save_picks_from_detections(
+            session,
             pick_thresh=params["pick_thresh"],
             is_p=False,
             auth=params["auth"],
@@ -1192,7 +1199,7 @@ class TestDetectorDBConnection:
             )
 
             data = (np.random.rand(1000) * 100).astype(np.uint8)
-            detout_id = db_conn._save_detection_output(
+            detout_id = db_conn._save_detection_output(session, 
                 detout_storage, data, detmethod_id
             )
 
@@ -1230,7 +1237,7 @@ class TestDetectorDBConnection:
         data = (np.random.rand(1000) * 100).astype(np.uint8)
         try:
             assert db_conn.daily_info.dldet_output_id_P is None
-            db_conn.save_P_post_probs(data, 1000)
+            db_conn.save_P_post_probs(session, data, 1000)
             assert (
                 db_conn.daily_info.dldet_output_id_P is not None
             ), "dldetector_output.id not stored"
@@ -1268,7 +1275,7 @@ class TestDetectorDBConnection:
         data = (np.random.rand(1000) * 100).astype(np.uint8)
         try:
             assert db_conn.daily_info.dldet_output_id_S is None
-            db_conn.save_S_post_probs(data, 1000)
+            db_conn.save_S_post_probs(session, data, 1000)
             assert (
                 db_conn.daily_info.dldet_output_id_S is not None
             ), "dldetector_output.id not stored"
@@ -1318,6 +1325,7 @@ class TestDetectorDBConnection:
         cont_data[(metadata["npts"] - 500) - samples : metadata["npts"]] = 4
 
         db_conn.save_picks_from_detections(
+            session,
             pick_thresh=pick_thresh,
             is_p=True,
             auth=auth,
@@ -1485,6 +1493,7 @@ class TestDetectorDBConnection:
         cont_data[(metadata["npts"] - 500) - samples : metadata["npts"]] = 4
 
         db_conn.save_picks_from_detections(
+            session,
             pick_thresh=pick_thresh,
             is_p=False,
             auth=auth,
@@ -1649,7 +1658,7 @@ class TestDetectorDBConnection:
             # print(date, metadata)
 
             # Updat the info to move to the next date
-            db_conn.save_data_info(date, metadata)
+            db_conn.save_data_info(session, date, metadata)
 
             # Make a new detection that is in the previous day's data
             ids = db_conn.get_dldet_fk_ids(is_p=True)
@@ -1657,7 +1666,7 @@ class TestDetectorDBConnection:
             det["data_id"] = ids["data"]
             det["method_id"] = ids["method"]
             det["inference_id"] = None
-            db_conn.save_detections([det])
+            db_conn.save_detections(session, [det])
             inserted_dets = services.get_dldetections(
                 session, ids["data"], ids["method"], 0.0
             )
@@ -1668,6 +1677,7 @@ class TestDetectorDBConnection:
             cont_data[0 : 502 + samples + 1] = 5
 
             db_conn.save_picks_from_detections(
+                session,
                 pick_thresh=params["pick_thresh"],
                 is_p=True,
                 auth=params["auth"],
@@ -1756,7 +1766,7 @@ class TestDetectorDBConnection:
             # print(date, metadata)
 
             # Updat the info to move to the next date
-            db_conn.save_data_info(date, metadata)
+            db_conn.save_data_info(session, date, metadata)
 
             # Make a new detection that is in the previous day's data
             ids = db_conn.get_dldet_fk_ids(is_p=False)
@@ -1764,7 +1774,7 @@ class TestDetectorDBConnection:
             det["data_id"] = ids["data"]
             det["method_id"] = ids["method"]
             det["inference_id"] = None
-            db_conn.save_detections([det])
+            db_conn.save_detections(session, [det])
             inserted_dets = services.get_dldetections(
                 session, ids["data"], ids["method"], 0.0
             )
@@ -1775,6 +1785,7 @@ class TestDetectorDBConnection:
             cont_data[0 : 502 + samples + 1] = 5
 
             db_conn.save_picks_from_detections(
+                session,
                 pick_thresh=params["pick_thresh"],
                 is_p=False,
                 auth=params["auth"],
@@ -1863,7 +1874,7 @@ class TestDetectorDBConnection:
             metadata["npts"] += 10 * metadata["sampling_rate"]
 
             # Update the info to move to the next date
-            db_conn.save_data_info(date, metadata)
+            db_conn.save_data_info(session, date, metadata)
 
             # Make a new detection
             ids = db_conn.get_dldet_fk_ids(is_p=True)
@@ -1871,7 +1882,7 @@ class TestDetectorDBConnection:
             det["data_id"] = ids["data"]
             det["method_id"] = ids["method"]
             det["inference_id"] = None
-            db_conn.save_detections([det])
+            db_conn.save_detections(session, [det])
             inserted_dets = services.get_dldetections(
                 session, ids["data"], ids["method"], 0.0
             )
@@ -1882,6 +1893,7 @@ class TestDetectorDBConnection:
             cont_data[5000 - samples : 5000 + samples + 1] = 5
 
             db_conn.save_picks_from_detections(
+                session,
                 pick_thresh=params["pick_thresh"],
                 is_p=True,
                 auth=params["auth"],

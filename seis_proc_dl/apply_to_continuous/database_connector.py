@@ -78,7 +78,7 @@ class DetectorDBConnection:
         self.detout_storage_P = None
         self.detout_storage_S = None
 
-    def get_channel_dates(self, date, net, stat, loc, seed_code):
+    def get_channel_dates(self, session, date, net, stat, loc, seed_code):
         """Returns the start and end times of the relevant channels for a station"""
         # The database will handel the "?" differently
         if len(seed_code) == 3 and self.ncomps == 3:
@@ -87,44 +87,44 @@ class DetectorDBConnection:
         self.station_name = stat
         self.net = net
         self.loc = loc
-        with self.Session() as session:
-            with session.begin():
-                # Get all channels for this station name and channel type
-                all_channels = services.get_common_station_channels_by_name(
-                    session, stat, seed_code, net=net, loc=loc
-                )
 
-                # Get the Station object and the Channel objects for the appropriate date
-                selected_stat, selected_channels = (
-                    services.get_operating_channels_by_station_name(
-                        session, stat, seed_code, date, net=net, loc=loc
-                    )
-                )
+        # Get all channels for this station name and channel type
+        all_channels = services.get_common_station_channels_by_name(
+            session, stat, seed_code, net=net, loc=loc
+        )
 
-                # Set the start date to the minimum date for all channels of the desired type
-                start_date = np.min([chan.ondate for chan in all_channels])
-                # Set the end date to the maximum date for all channels of the desired type
-                ends = [chan.offdate for chan in all_channels]
-                end_date = None if None in ends else np.max(ends)
+        # Get the Station object and the Channel objects for the appropriate date
+        selected_stat, selected_channels = (
+            services.get_operating_channels_by_station_name(
+                session, stat, seed_code, date, net=net, loc=loc
+            )
+        )
 
-                if selected_stat is not None:
-                    # If there is a selected stat,
-                    assert (
-                        len(selected_channels) == self.ncomps
-                    ), f"Number of channels selected ({len(selected_channels)}) does not agree with the number of components ({self.ncomps})"
-                    # Store the station
-                    self.station_id = selected_stat.id
-                    # Store the current channels
-                    total_ndays = services.get_similar_channel_total_ndays(
-                        session, net, stat, loc, selected_channels[0].seed_code
-                    )
-                    self.channel_info = ChannelInfo(selected_channels, total_ndays)
+        # Set the start date to the minimum date for all channels of the desired type
+        start_date = np.min([chan.ondate for chan in all_channels])
+        # Set the end date to the maximum date for all channels of the desired type
+        ends = [chan.offdate for chan in all_channels]
+        end_date = None if None in ends else np.max(ends)
+
+        if selected_stat is not None:
+            # If there is a selected stat,
+            assert (
+                len(selected_channels) == self.ncomps
+            ), f"Number of channels selected ({len(selected_channels)}) does not agree with the number of components ({self.ncomps})"
+            # Store the station
+            self.station_id = selected_stat.id
+            # Store the current channels
+            total_ndays = services.get_similar_channel_total_ndays(
+                session, net, stat, loc, selected_channels[0].seed_code
+            )
+            self.channel_info = ChannelInfo(selected_channels, total_ndays)
 
         self.last_channel_date = end_date
         return start_date, end_date
 
     def add_waveform_source(
         self,
+        session,
         name,
         desc,
         path=None,
@@ -135,44 +135,42 @@ class DetectorDBConnection:
         common_samp_rate=None,
     ):
         """Add a waveform source to the database. If it already exists, update it."""
-        with self.Session() as session:
-            with session.begin():
-                services.upsert_waveform_source(
-                    session,
-                    name,
-                    details=desc,
-                    path=path,
-                    filt_low=filt_low,
-                    filt_high=filt_high,
-                    detrend=detrend,
-                    normalize=normalize,
-                    common_samp_rate=common_samp_rate,
-                )
-                self.wf_source_id = services.get_waveform_source(session, name).id
 
-    def add_detection_method(self, name, desc, path, phase):
+        services.upsert_waveform_source(
+            session,
+            name,
+            details=desc,
+            path=path,
+            filt_low=filt_low,
+            filt_high=filt_high,
+            detrend=detrend,
+            normalize=normalize,
+            common_samp_rate=common_samp_rate,
+        )
+        session.flush()
+        self.wf_source_id = services.get_waveform_source(session, name).id
+
+    def add_detection_method(self, session, name, desc, path, phase):
         """Add a detection method to the database. If it already exists, update it."""
-        with self.Session() as session:
-            with session.begin():
-                services.upsert_detection_method(
-                    session, name, phase=phase, details=desc, path=path
-                )
-                if phase == "P":
-                    self.p_detection_method_id = services.get_detection_method(
-                        session, name
-                    ).id
-                elif phase == "S":
-                    self.s_detection_method_id = services.get_detection_method(
-                        session, name
-                    ).id
-                else:
-                    raise ValueError("Invalid Phase for Detection Method")
+        services.upsert_detection_method(
+            session, name, phase=phase, details=desc, path=path
+        )
+        if phase == "P":
+            self.p_detection_method_id = services.get_detection_method(
+                session, name
+            ).id
+        elif phase == "S":
+            self.s_detection_method_id = services.get_detection_method(
+                session, name
+            ).id
+        else:
+            raise ValueError("Invalid Phase for Detection Method")
 
-    def start_new_day(self, date):
+    def start_new_day(self, session, date):
         self.daily_info = DailyDetectionDBInfo(date)
         valid_channels = self.validate_channels_for_date(date)
         if not valid_channels:
-            channel_continues = self.update_channels(date)
+            channel_continues = self.update_channels(session, date)
 
             if not channel_continues:
                 return False
@@ -189,51 +187,49 @@ class DetectorDBConnection:
 
         return False
 
-    def update_channels(self, date):
-        with self.Session() as session:
-            with session.begin():
-                # Get the Station object and the Channel objects for the appropriate date
-                selected_station, selected_channels = (
-                    services.get_operating_channels_by_station_name(
-                        session,
-                        self.station_name,
-                        self.seed_code,
-                        date,
-                        net=self.net,
-                        loc=self.loc,
-                    )
-                )
+    def update_channels(self, session, date):
+        # Get the Station object and the Channel objects for the appropriate date
+        selected_station, selected_channels = (
+            services.get_operating_channels_by_station_name(
+                session,
+                self.station_name,
+                self.seed_code,
+                date,
+                net=self.net,
+                loc=self.loc,
+            )
+        )
 
-                if selected_channels is None or len(selected_channels) == 0:
-                    self.channel_info = None  # ChannelInfo([], 0)
-                    return False
+        if selected_channels is None or len(selected_channels) == 0:
+            self.channel_info = None  # ChannelInfo([], 0)
+            return False
 
-                if self.station_id is None:
-                    self.station_id = selected_station.id
+        if self.station_id is None:
+            self.station_id = selected_station.id
 
-                total_ndays = services.get_similar_channel_total_ndays(
-                    session,
-                    self.net,
-                    self.station_name,
-                    self.loc,
-                    selected_channels[0].seed_code,
-                )
+        total_ndays = services.get_similar_channel_total_ndays(
+            session,
+            self.net,
+            self.station_name,
+            self.loc,
+            selected_channels[0].seed_code,
+        )
 
-                self.channel_info = ChannelInfo(selected_channels, total_ndays)
+        self.channel_info = ChannelInfo(selected_channels, total_ndays)
 
         self._reset_waveform_P_storages()
         if self.ncomps == 3:
             self._reset_waveform_S_storages()
         return True
 
-    def save_data_info(self, date, metadata_dict, error=None):
+    def save_data_info(self, session, date, metadata_dict, error=None):
         """Add cont data info into the database. If it already exists, checks that the
         information is the same"""
         # TODO: Maybe I should add processing method table and make it part of the PK?
         # For now, I am just going to assume there is one processing method and the
         # results will be the same every time. Hopefully that's fine...
 
-        started_new_day = self.start_new_day(date)
+        started_new_day = self.start_new_day(session, date)
         if not started_new_day and (
             self.last_channel_date is None or date <= self.last_channel_date
         ):
@@ -241,65 +237,65 @@ class DetectorDBConnection:
         elif not started_new_day:
             raise ValueError(f"Cannot start processing {date}, no channel info exists")
 
-        with self.Session() as session:
-            with session.begin():
-                db_dict = {
-                    "sta_id": self.station_id,
-                    "chan_pref": self.seed_code,
-                    "ncomps": self.ncomps,
-                    "date": date,
-                    "error": error,
-                }
 
-                if metadata_dict is not None:
-                    db_dict = db_dict | {
-                        "samp_rate": metadata_dict["sampling_rate"],
-                        "dt": metadata_dict["dt"],
-                        "orig_npts": metadata_dict["original_npts"],
-                        "orig_start": metadata_dict["original_starttime"],
-                        "orig_end": metadata_dict["original_endtime"],
-                        "proc_npts": metadata_dict["npts"] if error is None else None,
-                        "proc_start": (
-                            metadata_dict["starttime"] if error is None else None
-                        ),
-                        "proc_end": None,  # just get this from proc_start, samp_rate, and proc_npts
-                        "prev_appended": metadata_dict["previous_appended"],
-                    }
+        db_dict = {
+            "sta_id": self.station_id,
+            "chan_pref": self.seed_code,
+            "ncomps": self.ncomps,
+            "date": date,
+            "error": error,
+        }
 
-                contdatainfo = services.get_contdatainfo(
-                    session, self.station_id, self.seed_code, self.ncomps, date
+        if metadata_dict is not None:
+            db_dict = db_dict | {
+                "samp_rate": metadata_dict["sampling_rate"],
+                "dt": metadata_dict["dt"],
+                "orig_npts": metadata_dict["original_npts"],
+                "orig_start": metadata_dict["original_starttime"],
+                "orig_end": metadata_dict["original_endtime"],
+                "proc_npts": metadata_dict["npts"] if error is None else None,
+                "proc_start": (
+                    metadata_dict["starttime"] if error is None else None
+                ),
+                "proc_end": None,  # just get this from proc_start, samp_rate, and proc_npts
+                "prev_appended": metadata_dict["previous_appended"],
+            }
+
+        contdatainfo = services.get_contdatainfo(
+            session, self.station_id, self.seed_code, self.ncomps, date
+        )
+
+        if contdatainfo is None:
+            contdatainfo = services.insert_contdatainfo(session, db_dict)
+            session.flush()
+        elif metadata_dict is None:
+            if contdatainfo.error != db_dict["error"]:
+                info_str = f"{db_dict['sta_id']}, {db_dict['chan_pref']}, {db_dict['date']}"
+                raise ValueError(
+                    f"DailyContDataInfo {info_str} row already exists but the error when loading has changed"
+                )
+        else:
+            # I think I did this because I'm fine with the entry existing already,
+            # as long as all the values are the same. just calling insert and catching
+            # the IntegrityError when there is a duplicate entry would not check
+            if (
+                contdatainfo.samp_rate != db_dict["samp_rate"]
+                or contdatainfo.dt != db_dict["dt"]
+                or contdatainfo.orig_npts != db_dict["orig_npts"]
+                or contdatainfo.orig_start != db_dict["orig_start"]
+                or contdatainfo.proc_start != db_dict["proc_start"]
+                or contdatainfo.proc_npts != db_dict["proc_npts"]
+                or contdatainfo.prev_appended != db_dict["prev_appended"]
+                or contdatainfo.error != db_dict["error"]
+            ):
+                info_str = f"{db_dict['sta_id']}, {db_dict['chan_pref']}, {db_dict['date']}"
+                raise ValueError(
+                    f"DailyContDataInfo {info_str} row already exists but the values have changed"
                 )
 
-                if contdatainfo is None:
-                    contdatainfo = services.insert_contdatainfo(session, db_dict)
-                elif metadata_dict is None:
-                    if contdatainfo.error != db_dict["error"]:
-                        info_str = f"{db_dict['sta_id']}, {db_dict['chan_pref']}, {db_dict['date']}"
-                        raise ValueError(
-                            f"DailyContDataInfo {info_str} row already exists but the error when loading has changed"
-                        )
-                else:
-                    # I think I did this because I'm fine with the entry existing already,
-                    # as long as all the values are the same. just calling insert and catching
-                    # the IntegrityError when there is a duplicate entry would not check
-                    if (
-                        contdatainfo.samp_rate != db_dict["samp_rate"]
-                        or contdatainfo.dt != db_dict["dt"]
-                        or contdatainfo.orig_npts != db_dict["orig_npts"]
-                        or contdatainfo.orig_start != db_dict["orig_start"]
-                        or contdatainfo.proc_start != db_dict["proc_start"]
-                        or contdatainfo.proc_npts != db_dict["proc_npts"]
-                        or contdatainfo.prev_appended != db_dict["prev_appended"]
-                        or contdatainfo.error != db_dict["error"]
-                    ):
-                        info_str = f"{db_dict['sta_id']}, {db_dict['chan_pref']}, {db_dict['date']}"
-                        raise ValueError(
-                            f"DailyContDataInfo {info_str} row already exists but the values have changed"
-                        )
+        self.daily_info.contdatainfo_id = contdatainfo.id
 
-            self.daily_info.contdatainfo_id = contdatainfo.id
-
-    def format_and_save_gaps(self, gaps, min_gap_sep_seconds):
+    def format_and_save_gaps(self, session, gaps, min_gap_sep_seconds):
         """Add gaps into the table. If many gaps in the same time period, combine them
         into one 'effective' gap. gaps should be a list of lists containing the gap seed_code, startime and endtime
         """
@@ -323,9 +319,8 @@ class DetectorDBConnection:
             )
             formatted_gaps += chan_gaps
 
-        with self.Session() as session:
-            with session.begin():
-                services.insert_gaps(session, formatted_gaps)
+        services.insert_gaps(session, formatted_gaps)
+        session.flush()
 
     def format_channel_gaps(self, gaps, chan_id, min_gap_sep_seconds):
         if gaps is None:
@@ -363,16 +358,15 @@ class DetectorDBConnection:
         }
         return d
 
-    def save_detections(self, detections):
+    def save_detections(self, session, detections):
         """Add detections above a threshold into the database. Do not add detections if
         they exist within a gap"""
 
         if len(detections) == 0:
             return
 
-        with self.Session() as session:
-            with session.begin():
-                services.bulk_insert_dldetections_with_gap_check(session, detections)
+        services.bulk_insert_dldetections_with_gap_check(session, detections)
+        session.flush()
 
     def get_dldet_fk_ids(self, is_p=True):
         d = {
@@ -386,7 +380,7 @@ class DetectorDBConnection:
             d["detout"] = self.daily_info.dldet_output_id_S
         return d
 
-    def save_P_post_probs(self, data, expected_array_length=8640000, on_event=None):
+    def save_P_post_probs(self, session, data, expected_array_length=8640000, on_event=None):
         if self.detout_storage_P is None:
             self.detout_storage_P = self._open_dldetection_output_storage(
                 expected_array_length=expected_array_length,
@@ -400,13 +394,14 @@ class DetectorDBConnection:
             data = np.concatenate([data, tmp])
 
         detout_id = self._save_detection_output(
+            session,
             self.detout_storage_P,
             data,
             self.p_detection_method_id,
         )
         self.daily_info.dldet_output_id_P = detout_id
 
-    def save_S_post_probs(self, data, expected_array_length=8640000, on_event=None):
+    def save_S_post_probs(self, session, data, expected_array_length=8640000, on_event=None):
         if self.detout_storage_S is None:
             self.detout_storage_S = self._open_dldetection_output_storage(
                 expected_array_length=expected_array_length,
@@ -420,6 +415,7 @@ class DetectorDBConnection:
             data = np.concatenate([data, tmp])
 
         detout_id = self._save_detection_output(
+            session,
             self.detout_storage_S, data, self.s_detection_method_id
         )
         self.daily_info.dldet_output_id_S = detout_id
@@ -441,25 +437,25 @@ class DetectorDBConnection:
         )
         return storage
 
-    def _save_detection_output(self, storage, data, det_method_id):
+    def _save_detection_output(self, session, storage, data, det_method_id):
         detout_id = None
-        with self.Session() as session:
-            with session.begin():
-                try:
-                    storage.start_transaction()
-                    detout = services.insert_dldetector_output_pytable(
-                        session,
-                        storage,
-                        self.daily_info.contdatainfo_id,
-                        det_method_id,
-                        data.astype(np.uint8),
-                    )
-                    detout_id = detout.id
-                except Exception as e:
-                    storage.rollback()
-                    self.close_open_pytables()
-                    raise e
 
+        try:
+            storage.start_transaction()
+            detout = services.insert_dldetector_output_pytable(
+                session,
+                storage,
+                self.daily_info.contdatainfo_id,
+                det_method_id,
+                data.astype(np.uint8),
+            )
+            detout_id = detout.id
+        except Exception as e:
+            storage.rollback()
+            self.close_open_pytables()
+            raise e
+
+        session.flush()
         storage.commit()
         return detout_id
 
@@ -540,6 +536,7 @@ class DetectorDBConnection:
 
     def save_picks_from_detections(
         self,
+        session,
         pick_thresh,
         is_p,
         auth,
@@ -557,139 +554,134 @@ class DetectorDBConnection:
         }
         storage_dict = None
 
-        with self.Session() as session:
-            with session.begin():
-                # Get ids
-                data_id = self.daily_info.contdatainfo_id
-                if is_p:
-                    method_id = self.p_detection_method_id
-                    phase = "P"
-                else:
-                    method_id = self.s_detection_method_id
-                    phase = "S"
-                # Compute the number of samples to grab on either side of the detection
-                cdi = session.get(DailyContDataInfo, data_id)
-                cdi_date = cdi.date 
-                cdi_prev_appended = cdi.prev_appended
-                samples_around_pick = int(seconds_around_pick * cdi.samp_rate)
-                total_npts = len(continuous_data)
-                total_expected_samples = samples_around_pick * 2 + 1
 
-                common_wf_details["expected_array_length"] = total_expected_samples
-                common_wf_details["phase"] = phase
-                common_wf_details["data_id"] = data_id
+        # Get ids
+        data_id = self.daily_info.contdatainfo_id
+        if is_p:
+            method_id = self.p_detection_method_id
+            phase = "P"
+        else:
+            method_id = self.s_detection_method_id
+            phase = "S"
+        # Compute the number of samples to grab on either side of the detection
+        cdi = session.get(DailyContDataInfo, data_id)
+        cdi_date = cdi.date 
+        cdi_prev_appended = cdi.prev_appended
+        samples_around_pick = int(seconds_around_pick * cdi.samp_rate)
+        total_npts = len(continuous_data)
+        total_expected_samples = samples_around_pick * 2 + 1
 
-                # Get all detections for the contdatainfo and method greater than the pick_thresh
-                dldets = services.get_dldetections(
-                    session, data_id, method_id, pick_thresh, phase=phase
-                )
+        common_wf_details["expected_array_length"] = total_expected_samples
+        common_wf_details["phase"] = phase
+        common_wf_details["data_id"] = data_id
 
-                proc_dldets = []
-                # Iterate over the detections
-                for det in dldets:
-                    pick_waveform_details = {}
+        # Get all detections for the contdatainfo and method greater than the pick_thresh
+        dldets = services.get_dldetections(
+            session, data_id, method_id, pick_thresh, phase=phase
+        )
 
-                    ## Compute the start and end inds for waveforms in pytable
-                    ## Rely on the default values in the storage object
-                    wf_start_ind = 0
-                    wf_end_ind = total_expected_samples
-                    ##
+        proc_dldets = []
+        # Iterate over the detections
+        for det in dldets:
+            pick_waveform_details = {}
 
-                    # Compute the relevant waveform information for all channels
-                    i1 = det.sample - samples_around_pick
-                    i2 = det.sample + samples_around_pick + 1
-                    if i1 < 0:
-                        wf_start_ind = abs(i1)
-                        i1 = 0
-                    # TODO: Check if this needs a -1
-                    if i2 > total_npts:
-                        wf_end_ind -= i2 - total_npts
-                        i2 = total_npts
+            ## Compute the start and end inds for waveforms in pytable
+            ## Rely on the default values in the storage object
+            wf_start_ind = 0
+            wf_end_ind = total_expected_samples
+            ##
 
-                    pick_cont_data = deepcopy(continuous_data[i1:i2, :])
-                    wf_start = cdi.proc_start + timedelta(seconds=(i1 * cdi.dt))
-                    wf_end = cdi.proc_start + timedelta(seconds=(i2 * cdi.dt))
-                    pick_waveform_details["npts"] = i2 - i1
-                    pick_waveform_details["wf_start"] = wf_start
-                    pick_waveform_details["wf_end"] = wf_end
-                    pick_waveform_details["wf_start_ind"] = wf_start_ind
-                    pick_waveform_details["wf_end_ind"] = wf_end_ind
-                    pick_waveform_details["pick_cont_data"] = pick_cont_data
-                    pick_waveform_details["det_time"] = det.time
-                    pick_waveform_details["det_id"] = det.id
-                    pick_waveform_details["det_phase"] = det.phase
-                    proc_dldets.append(pick_waveform_details)
+            # Compute the relevant waveform information for all channels
+            i1 = det.sample - samples_around_pick
+            i2 = det.sample + samples_around_pick + 1
+            if i1 < 0:
+                wf_start_ind = abs(i1)
+                i1 = 0
+            # TODO: Check if this needs a -1
+            if i2 > total_npts:
+                wf_end_ind -= i2 - total_npts
+                i2 = total_npts
 
-            session.close()
+            pick_cont_data = deepcopy(continuous_data[i1:i2, :])
+            wf_start = cdi.proc_start + timedelta(seconds=(i1 * cdi.dt))
+            wf_end = cdi.proc_start + timedelta(seconds=(i2 * cdi.dt))
+            pick_waveform_details["npts"] = i2 - i1
+            pick_waveform_details["wf_start"] = wf_start
+            pick_waveform_details["wf_end"] = wf_end
+            pick_waveform_details["wf_start_ind"] = wf_start_ind
+            pick_waveform_details["wf_end_ind"] = wf_end_ind
+            pick_waveform_details["pick_cont_data"] = pick_cont_data
+            pick_waveform_details["det_time"] = det.time
+            pick_waveform_details["det_id"] = det.id
+            pick_waveform_details["det_phase"] = det.phase
+            proc_dldets.append(pick_waveform_details)
 
         prev_storage_dict = None
         try:
-            with self.Session() as session:
-                with session.begin():
-                    #### GET THE PYTABLES STORAGE
-                    storage_dict = None
-                    if use_pytables:
-                        storage_dict = self._get_waveform_storages(
-                            session, is_p, common_wf_details
+            #### GET THE PYTABLES STORAGE
+            storage_dict = None
+            if use_pytables:
+                storage_dict = self._get_waveform_storages(
+                    session, is_p, common_wf_details
+                )
+
+                # Start a transaction for these
+                for _, chan_storage in storage_dict.items():
+                    chan_storage.start_transaction()
+
+                if is_p:
+                    prev_storage_dict = self.prev_waveform_storage_dict_P
+                else:
+                    prev_storage_dict = self.prev_waveform_storage_dict_S
+
+                # Start a transaction for these
+                if prev_storage_dict is not None:
+                    for _, chan_storage in prev_storage_dict.items():
+                        chan_storage.start_transaction()
+            #####
+            for det_dict in proc_dldets:
+                # Check if the detection is on the previous day, if so need to check
+                # for existing picks and handle accordingly 
+                insert_new_pick = True
+                if det_dict["det_time"].date() < cdi_date:
+                    assert (
+                        cdi_prev_appended
+                    ), "Previous data was not appended, yet there is a detection on the previous day..."
+
+                    insert_new_pick = (
+                        self._potentially_modify_pick_and_waveform(
+                            session,
+                            storage_dict, 
+                            prev_storage_dict,
+                            det_dict,
+                            common_wf_details,
                         )
+                    )
 
-                        # Start a transaction for these
-                        for _, chan_storage in storage_dict.items():
-                            chan_storage.start_transaction()
+                if insert_new_pick:
+                    # Create a pick from the detection
+                    pick = services.insert_pick(
+                        session,
+                        self.station_id,
+                        self.seed_code,
+                        det_dict["det_phase"],
+                        det_dict["det_time"],
+                        auth,
+                        detid=det_dict["det_id"],
+                    )
 
-                        if is_p:
-                            prev_storage_dict = self.prev_waveform_storage_dict_P
-                        else:
-                            prev_storage_dict = self.prev_waveform_storage_dict_S
+                    self._insert_new_waveforms(
+                        session,
+                        storage_dict,
+                        pick,
+                        det_dict,
+                        common_wf_details,
+                    )
 
-                        # Start a transaction for these
-                        if prev_storage_dict is not None:
-                            for _, chan_storage in prev_storage_dict.items():
-                                chan_storage.start_transaction()
-                    #####
-                    for det_dict in proc_dldets:
-                        # Check if the detection is on the previous day, if so need to check
-                        # for existing picks and handle accordingly 
-                        insert_new_pick = True
-                        if det_dict["det_time"].date() < cdi_date:
-                            assert (
-                                cdi_prev_appended
-                            ), "Previous data was not appended, yet there is a detection on the previous day..."
-
-                            insert_new_pick = (
-                                self._potentially_modify_pick_and_waveform(
-                                    session,
-                                    storage_dict, 
-                                    prev_storage_dict,
-                                    det_dict,
-                                    common_wf_details,
-                                )
-                            )
-
-                        if insert_new_pick:
-                            # Create a pick from the detection
-                            pick = services.insert_pick(
-                                session,
-                                self.station_id,
-                                self.seed_code,
-                                det_dict["det_phase"],
-                                det_dict["det_time"],
-                                auth,
-                                detid=det_dict["det_id"],
-                            )
-
-                            self._insert_new_waveforms(
-                                session,
-                                storage_dict,
-                                pick,
-                                det_dict,
-                                common_wf_details,
-                            )
-
-                            if is_p:
-                                self.n_P_waveform_storage_entries += 1
-                            else:
-                                self.n_S_waveform_storage_entries += 1
+                    if is_p:
+                        self.n_P_waveform_storage_entries += 1
+                    else:
+                        self.n_S_waveform_storage_entries += 1
                         
         except Exception as e:
             if use_pytables and storage_dict is not None:

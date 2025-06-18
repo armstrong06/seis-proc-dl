@@ -113,45 +113,51 @@ class ApplyDetector:
             self.s_det_thresh = None
             self.s_pick_thresh = None
 
-            self.db_conn.add_waveform_source(
-                name="extract-dailyContData",
-                desc=(
-                    "Waveform snippets are from the daily mseed file that has been loaded and "
-                    "processed using seis-proc-dl.apply_to_continuous.apply_detectors.DataLoader. "
-                    "Mseed files were resampled to 100 Hz beforehand. No additional processing is applied."
-                ),
-                filt_low=None,
-                filt_high=None,
-                detrend=None,
-                normalize=None,
-                common_samp_rate=100.0,
-            )
-            if ncomps == 1:
-                self.p_det_thresh = config.database.p_det_thresh_1c
-                self.p_pick_thresh = config.database.p_pick_thresh_1c
-                self.db_conn.add_detection_method(
-                    config.database.det_method_1c_P.name,
-                    desc=config.database.det_method_1c_P.desc,
-                    path=config.paths.one_comp_p_model,
-                    phase="P",
-                )
-            elif ncomps == 3:
-                self.p_det_thresh = config.database.p_det_thresh_3c
-                self.p_pick_thresh = config.database.p_pick_thresh_3c
-                self.s_det_thresh = config.database.s_det_thresh
-                self.s_pick_thresh = config.database.s_pick_thresh
-                self.db_conn.add_detection_method(
-                    config.database.det_method_3c_P.name,
-                    desc=config.database.det_method_3c_P.desc,
-                    path=config.paths.three_comp_p_model,
-                    phase="P",
-                )
-                self.db_conn.add_detection_method(
-                    config.database.det_method_3c_S.name,
-                    desc=config.database.det_method_3c_S.desc,
-                    path=config.paths.three_comp_s_model,
-                    phase="S",
-                )
+            with self.db_conn.Session() as session:
+                with session.begin():
+                    self.db_conn.add_waveform_source(
+                        session,
+                        name="extract-dailyContData",
+                        desc=(
+                            "Waveform snippets are from the daily mseed file that has been loaded and "
+                            "processed using seis-proc-dl.apply_to_continuous.apply_detectors.DataLoader. "
+                            "Mseed files were resampled to 100 Hz beforehand. No additional processing is applied."
+                        ),
+                        filt_low=None,
+                        filt_high=None,
+                        detrend=None,
+                        normalize=None,
+                        common_samp_rate=100.0,
+                    )
+                    if ncomps == 1:
+                        self.p_det_thresh = config.database.p_det_thresh_1c
+                        self.p_pick_thresh = config.database.p_pick_thresh_1c
+                        self.db_conn.add_detection_method(
+                            session,
+                            config.database.det_method_1c_P.name,
+                            desc=config.database.det_method_1c_P.desc,
+                            path=config.paths.one_comp_p_model,
+                            phase="P",
+                        )
+                    elif ncomps == 3:
+                        self.p_det_thresh = config.database.p_det_thresh_3c
+                        self.p_pick_thresh = config.database.p_pick_thresh_3c
+                        self.s_det_thresh = config.database.s_det_thresh
+                        self.s_pick_thresh = config.database.s_pick_thresh
+                        self.db_conn.add_detection_method(
+                            session,
+                            config.database.det_method_3c_P.name,
+                            desc=config.database.det_method_3c_P.desc,
+                            path=config.paths.three_comp_p_model,
+                            phase="P",
+                        )
+                        self.db_conn.add_detection_method(
+                            session,
+                            config.database.det_method_3c_S.name,
+                            desc=config.database.det_method_3c_S.desc,
+                            path=config.paths.three_comp_s_model,
+                            phase="S",
+                        )
 
     def __init_1c(self):
         """Initialize the phase detector for 1 component P picker"""
@@ -235,9 +241,10 @@ class ApplyDetector:
         if self.db_conn is None:
             stat_startdate, stat_enddate = self.get_station_dates(year, stat, chan)
         else:
-            stat_startdate, stat_enddate = self.db_conn.get_channel_dates(
-                date, net, stat, loc, chan
-            )
+            with self.db_conn.Session() as session:
+                stat_startdate, stat_enddate = self.db_conn.get_channel_dates(
+                    session, date, net, stat, loc, chan
+                )
         date, n_days = self.validate_date_range(
             stat_startdate, stat_enddate, date, n_days
         )
@@ -371,89 +378,97 @@ class ApplyDetector:
                 self.dataloader.store_N_seconds * self.EXPECTED_SAMPLING_RATE
             )
 
-        start_data = time.time()
-        # Add row to contdatainfo
-        self.db_conn.save_data_info(date, metadata, error=error)
-        # Add gaps - gaps can be None if load_channel_data was never called or an empty list if
-        # it was called but no gaps exist
-        if gaps is not None and len(gaps) > 0:
-            self.db_conn.format_and_save_gaps(
-                self.dataloader.simplify_gaps(gaps), self.min_gap_sep_seconds
-            )
-        logger.debug(
-            f"Time to store contdatainfo and gaps: {time.time() - start_data:0.2f} s"
-        )
+        with self.db_conn.Session() as session:
+            with session.begin():
+                start_data = time.time()
+                # Add row to contdatainfo
+                self.db_conn.save_data_info(session, date, metadata, error=error)
+                # Add gaps - gaps can be None if load_channel_data was never called or an empty list if
+                # it was called but no gaps exist
+                if gaps is not None and len(gaps) > 0:
+                    self.db_conn.format_and_save_gaps(session, 
+                        self.dataloader.simplify_gaps(gaps), self.min_gap_sep_seconds
+                    )
+                logger.debug(
+                    f"Time to store contdatainfo and gaps: {time.time() - start_data:0.2f} s"
+                )
 
-        # P post probs may not exist if there was an error in loading
-        if p_post_probs is not None:
-            start_dets = time.time()
-            # Only save post prob info in db if using pytables
-            if self.use_pytables:
-                self.db_conn.save_P_post_probs(
-                    p_post_probs,
-                    expected_array_length=expected_array_length,
-                    on_event=logger.info,
-                )
-            # Save P Detections
-            self.db_conn.save_detections(
-                self.get_detections_from_post_probs(
-                    p_post_probs,
-                    "P",
-                    thresh=self.p_det_thresh,
-                    db_ids=self.db_conn.get_dldet_fk_ids(),
-                )
-            )
-            logger.debug(
-                f"Time to process and store P - detections: {time.time() - start_dets:0.2f} s"
-            )
-            start_picks = time.time()
-            self.db_conn.save_picks_from_detections(
-                pick_thresh=self.p_pick_thresh,
-                is_p=True,
-                auth=self.db_pick_author,
-                continuous_data=cont_data,
-                seconds_around_pick=self.wf_seconds_around_pick,
-                use_pytables=self.use_pytables,
-                on_event=logger.info,
-            )
-            logger.debug(
-                f"Time to store P - picks and waveforms: {time.time() - start_picks:0.2f} s"
-            )
+                # P post probs may not exist if there was an error in loading
+                if p_post_probs is not None:
+                    start_dets = time.time()
+                    # Only save post prob info in db if using pytables
+                    if self.use_pytables:
+                        self.db_conn.save_P_post_probs(
+                            session,
+                            p_post_probs,
+                            expected_array_length=expected_array_length,
+                            on_event=logger.info,
+                        )
+                    # Save P Detections
+                    self.db_conn.save_detections(
+                        session,
+                        self.get_detections_from_post_probs(
+                            p_post_probs,
+                            "P",
+                            thresh=self.p_det_thresh,
+                            db_ids=self.db_conn.get_dldet_fk_ids(),
+                        )
+                    )
+                    logger.debug(
+                        f"Time to process and store P - detections: {time.time() - start_dets:0.2f} s"
+                    )
+                    start_picks = time.time()
+                    self.db_conn.save_picks_from_detections(
+                        session,
+                        pick_thresh=self.p_pick_thresh,
+                        is_p=True,
+                        auth=self.db_pick_author,
+                        continuous_data=cont_data,
+                        seconds_around_pick=self.wf_seconds_around_pick,
+                        use_pytables=self.use_pytables,
+                        on_event=logger.info,
+                    )
+                    logger.debug(
+                        f"Time to store P - picks and waveforms: {time.time() - start_picks:0.2f} s"
+                    )
 
-        # Save S detections
-        if self.ncomps == 3 and s_post_probs is not None:
-            start_dets = time.time()
-            # Only save post prob info in db if using pytables
-            if self.use_pytables:
-                self.db_conn.save_S_post_probs(
-                    s_post_probs,
-                    expected_array_length=expected_array_length,
-                    on_event=logger.debug,
-                )
-            self.db_conn.save_detections(
-                self.get_detections_from_post_probs(
-                    s_post_probs,
-                    "S",
-                    thresh=self.s_det_thresh,
-                    db_ids=self.db_conn.get_dldet_fk_ids(is_p=False),
-                )
-            )
-            logger.debug(
-                f"Time to process and store S - detections: {time.time() - start_dets:0.2f} s"
-            )
-            start_picks = time.time()
-            self.db_conn.save_picks_from_detections(
-                pick_thresh=self.s_pick_thresh,
-                is_p=False,
-                auth=self.db_pick_author,
-                continuous_data=cont_data,
-                seconds_around_pick=self.wf_seconds_around_pick,
-                use_pytables=self.use_pytables,
-                on_event=logger.debug,
-            )
-            logger.debug(
-                f"Time to store S - picks and waveforms: {time.time() - start_picks:0.2f} s"
-            )
+                # Save S detections
+                if self.ncomps == 3 and s_post_probs is not None:
+                    start_dets = time.time()
+                    # Only save post prob info in db if using pytables
+                    if self.use_pytables:
+                        self.db_conn.save_S_post_probs(
+                            session,
+                            s_post_probs,
+                            expected_array_length=expected_array_length,
+                            on_event=logger.debug,
+                        )
+                    self.db_conn.save_detections(
+                        session,
+                        self.get_detections_from_post_probs(
+                            s_post_probs,
+                            "S",
+                            thresh=self.s_det_thresh,
+                            db_ids=self.db_conn.get_dldet_fk_ids(is_p=False),
+                        )
+                    )
+                    logger.debug(
+                        f"Time to process and store S - detections: {time.time() - start_dets:0.2f} s"
+                    )
+                    start_picks = time.time()
+                    self.db_conn.save_picks_from_detections(
+                        session,
+                        pick_thresh=self.s_pick_thresh,
+                        is_p=False,
+                        auth=self.db_pick_author,
+                        continuous_data=cont_data,
+                        seconds_around_pick=self.wf_seconds_around_pick,
+                        use_pytables=self.use_pytables,
+                        on_event=logger.debug,
+                    )
+                    logger.debug(
+                        f"Time to store S - picks and waveforms: {time.time() - start_picks:0.2f} s"
+                    )
 
     # TODO: This name seems inappropriate (apply_to_one_day?)
     def apply_to_one_file(self, files, outdir=None, debug_N_examples=-1):
