@@ -857,23 +857,29 @@ class DetectorDBConnection:
     def close_open_pytables(self):
         if self.detout_storage_P is not None:
             self.detout_storage_P.close()
+            self.detout_storage_P = None
 
         if self.detout_storage_S is not None:
             self.detout_storage_S.close()
+            self.detout_storage_S = None
 
         if self.waveform_storage_dict_P is not None:
             for key, stor in self.waveform_storage_dict_P.items():
                 stor.close()
+            self.waveform_storage_dict_P = None
         if self.waveform_storage_dict_S is not None:
             for key, stor in self.waveform_storage_dict_S.items():
                 stor.close()
-
+            self.waveform_storage_dict_S = None
         if self.prev_waveform_storage_dict_P is not None:
             for key, stor in self.prev_waveform_storage_dict_P.items():
                 stor.close()
+            self.prev_waveform_storage_dict_P = None
         if self.prev_waveform_storage_dict_S is not None:
             for key, stor in self.prev_waveform_storage_dict_S.items():
                 stor.close()
+            self.prev_waveform_storage_dict_S = None
+            
 
 class SwagPickerDBConnection:
 
