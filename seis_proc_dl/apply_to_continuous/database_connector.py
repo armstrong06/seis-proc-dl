@@ -405,6 +405,7 @@ class DetectorDBConnection:
     ):
         if self.detout_storage_S is None:
             self.detout_storage_S = self._open_dldetection_output_storage(
+                session,
                 expected_array_length=expected_array_length,
                 phase="S",
                 det_method_id=self.s_detection_method_id,
@@ -670,7 +671,6 @@ class DetectorDBConnection:
                         auth,
                         detid=det_dict["det_id"],
                     )
-
                     self._insert_new_waveforms(
                         session,
                         storage_dict,

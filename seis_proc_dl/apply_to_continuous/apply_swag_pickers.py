@@ -484,6 +484,8 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
 
         with self.db_conn.Session() as session:
             with session.begin():
+                session.execute("SET innodb_lock_wait_timeout = 120")
+                session.commit()  # not strictly required here, but fine to include
                 self.db_conn.save_corrections(
                     session,
                     pick_source_ids,

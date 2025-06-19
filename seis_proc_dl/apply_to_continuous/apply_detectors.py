@@ -103,7 +103,9 @@ class ApplyDetector:
         self.db_conn = None
         if config.database is not None:
             self.db_conn = DetectorDBConnection(ncomps, session_factory=session_factory)
-            logger.debug(f"Using MAX_WAVEFORMS_PER_STORAGE = {self.db_conn.MAX_WAVEFORMS_PER_STORAGE}")
+            logger.debug(
+                f"Using MAX_WAVEFORMS_PER_STORAGE = {self.db_conn.MAX_WAVEFORMS_PER_STORAGE}"
+            )
             self.use_pytables = config.database.use_pytables
             self.wf_seconds_around_pick = config.database.wf_seconds_around_pick
             self.db_pick_author = config.database.pick_author
@@ -316,7 +318,7 @@ class ApplyDetector:
                     db_gaps = self.dataloader.gaps
                     if not applied_successfully:
                         insufficient_data_dates.append(date_str)
-                        #error = "insufficient_data"
+                        # error = "insufficient_data"
                         # Reset dataloader
                         self.dataloader.error_in_loading()
 
@@ -380,14 +382,19 @@ class ApplyDetector:
 
         with self.db_conn.Session() as session:
             with session.begin():
+                # TODO: See if this works
+                # session.execute("SET innodb_lock_wait_timeout = 120")
+                # session.commit()  # not strictly required here, but fine to include
                 start_data = time.time()
                 # Add row to contdatainfo
                 self.db_conn.save_data_info(session, date, metadata, error=error)
                 # Add gaps - gaps can be None if load_channel_data was never called or an empty list if
                 # it was called but no gaps exist
                 if gaps is not None and len(gaps) > 0:
-                    self.db_conn.format_and_save_gaps(session, 
-                        self.dataloader.simplify_gaps(gaps), self.min_gap_sep_seconds
+                    self.db_conn.format_and_save_gaps(
+                        session,
+                        self.dataloader.simplify_gaps(gaps),
+                        self.min_gap_sep_seconds,
                     )
                 logger.debug(
                     f"Time to store contdatainfo and gaps: {time.time() - start_data:0.2f} s"
@@ -412,7 +419,7 @@ class ApplyDetector:
                             "P",
                             thresh=self.p_det_thresh,
                             db_ids=self.db_conn.get_dldet_fk_ids(),
-                        )
+                        ),
                     )
                     logger.debug(
                         f"Time to process and store P - detections: {time.time() - start_dets:0.2f} s"
@@ -450,7 +457,7 @@ class ApplyDetector:
                             "S",
                             thresh=self.s_det_thresh,
                             db_ids=self.db_conn.get_dldet_fk_ids(is_p=False),
-                        )
+                        ),
                     )
                     logger.debug(
                         f"Time to process and store S - detections: {time.time() - start_dets:0.2f} s"
@@ -1384,12 +1391,12 @@ class DataLoader:
         # assert np.max(st_Z[0].data) < 2**24 and np.min(st_E[0].data) > -(
         #     2**24
         # ), "Z data too large to be represented accuratley with float32"
-        
-        for st in [st_E, st_N, st_Z]: 
+
+        for st in [st_E, st_N, st_Z]:
             if not (np.max(abs(st[0].data)) < 2**24):
                 print(st[0].data.max(), st[0].data.min())
                 return False, "values_extremely_large"
-            
+
         # Data from unprocessed mseed files is int32 but resampled mseed files are float64
         cont_data = np.zeros((npts[0], 3), dtype=np.float32)  # , dtype=np.int32)
         cont_data[:, 0] = st_E[0].data
@@ -1441,7 +1448,7 @@ class DataLoader:
         if not (np.max(abs(st[0].data)) < 2**24):
             print("MAX, MIN", np.max(st[0].data), np.min(st[0].data))
             return False, "values_extremely_large"
-        
+
         # Data from unprocessed mseed files is int32 but resampled mseed files are float64
         cont_data = np.zeros(
             (st[0].stats.npts, 1), dtype=np.float32
