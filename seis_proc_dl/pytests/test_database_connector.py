@@ -63,7 +63,7 @@ def db_session(monkeypatch):
         monkeypatch.setattr(instance, "Session", lambda: session_factory())
 
     session = session_factory()  # Create an initial session
-    yield session, patch_session  # Provide session & patch function to the test
+    yield session_factory, patch_session  # Provide session & patch function to the test
 
     # Teardown: Rollback all changes & close the connection
     session.close()
@@ -215,8 +215,8 @@ def channel_ex_3c():
 
 @pytest.fixture
 def db_session_with_3c_stat_loaded(db_session, stat_ex, channel_ex_3c):
-    session, patch_session = db_session  # Unpack session & patch function
-
+    session_factory, patch_session = db_session  # Unpack session & patch function
+    session = session_factory()
     stat_dict = stat_ex
     chan_dict_list = channel_ex_3c
 
@@ -276,7 +276,8 @@ class TestDetectorDBConnection:
         ), "invalid channel offdate"
 
     def test_get_channel_dates_YMV(self, db_session):
-        session, patch_session = db_session  # Unpack session & patch function
+        session_factory, patch_session = db_session  # Unpack session & patch function
+        session = session_factory()
         db_conn = DetectorDBConnection(3)  # Create instance
 
         patch_session(db_conn)  # Patch `self.Session` on the instance
@@ -288,7 +289,8 @@ class TestDetectorDBConnection:
         assert end is None, "invalid end date"
 
     def test_get_channel_dates_YJC(self, db_session):
-        session, patch_session = db_session  # Unpack session & patch function
+        session_factory, patch_session = db_session  # Unpack session & patch function
+        session = session_factory()
         db_conn = DetectorDBConnection(3)  # Create instance
 
         patch_session(db_conn)  # Patch `self.Session` on the instance
@@ -300,7 +302,8 @@ class TestDetectorDBConnection:
         assert end is None, "invalid end date"
 
     def test_get_channels_1C(self, db_session):
-        session, patch_session = db_session  # Unpack session & patch function
+        session_factory, patch_session = db_session  # Unpack session & patch function
+        session = session_factory()
         db_conn = DetectorDBConnection(1)  # Create instance
         patch_session(db_conn)  # Patch `self.Session` on the instance
 
@@ -336,8 +339,12 @@ class TestDetectorDBConnection:
         db_conn.add_waveform_source(
             session, "TEST-extracted", "Extracted from DataLoader.continuous_data"
         )
-        db_conn.add_detection_method(session, "TEST-P", "test method", "data/path/P", "P")
-        db_conn.add_detection_method(session, "TEST-S", "test method", "data/path/S", "S")
+        db_conn.add_detection_method(
+            session, "TEST-P", "test method", "data/path/P", "P"
+        )
+        db_conn.add_detection_method(
+            session, "TEST-S", "test method", "data/path/S", "S"
+        )
 
         return session, db_conn
 
@@ -1199,8 +1206,8 @@ class TestDetectorDBConnection:
             )
 
             data = (np.random.rand(1000) * 100).astype(np.uint8)
-            detout_id = db_conn._save_detection_output(session, 
-                detout_storage, data, detmethod_id
+            detout_id = db_conn._save_detection_output(
+                session, detout_storage, data, detmethod_id
             )
 
             assert detout_id is not None, "detector_output id is not defined"
@@ -1863,7 +1870,7 @@ class TestDetectorDBConnection:
     ):
         try:
             session, db_conn, params = db_session_with_P_picks_and_wfs_pytables
-            
+
             date, metadata = contdatainfo_ex
             date = date + timedelta(days=1)
             metadata["original_starttime"] += timedelta(days=1)
@@ -1903,7 +1910,7 @@ class TestDetectorDBConnection:
             )
 
             for _, stor in db_conn.waveform_storage_dict_P.items():
-                #print(stor.file_name)
+                # print(stor.file_name)
                 assert stor.file_name[-6:-3] == "001"
 
         finally:
@@ -2000,11 +2007,30 @@ def simple_obspy_gaps_ex():
     return deepcopy([gap1, gap2, gap3])
 
 
+@pytest.fixture
+def db_session_for_applier_with_3c_stat_loaded(db_session, stat_ex, channel_ex_3c):
+    session_factory, patch_session = db_session  # Unpack session & patch function
+    session = session_factory()
+    stat_dict = stat_ex
+    chan_dict_list = channel_ex_3c
+
+    stat = services.insert_station(session, **stat_dict)
+    session.flush()
+
+    for chan in chan_dict_list:
+        chan["sta_id"] = stat.id
+
+    services.insert_channels(session, chan_dict_list)
+    session.commit()
+
+    return session_factory
+
+
 class TestApplyDetectorDB:
     def test_init_3c(self, db_session):
-        session, _ = db_session
+        session_factory, _ = db_session
         applier = ApplyDetector(
-            3, apply_detector_config, session_factory=lambda: session
+            3, apply_detector_config, session_factory=session_factory
         )
         assert applier.db_conn is not None, "db_conn not defined"
         assert applier.db_conn.ncomps == 3, "db_conn.ncomps incorrect"
@@ -2023,9 +2049,9 @@ class TestApplyDetectorDB:
         assert applier.min_gap_sep_seconds == 5
 
     def test_init_1c(self, db_session):
-        session, _ = db_session
+        session_factory, _ = db_session
         applier = ApplyDetector(
-            1, apply_detector_config, session_factory=lambda: session
+            1, apply_detector_config, session_factory=session_factory
         )
         assert applier.db_conn is not None, "db_conn not defined"
         assert applier.db_conn.ncomps == 1, "db_conn.ncomps incorrect"
@@ -2045,16 +2071,16 @@ class TestApplyDetectorDB:
 
     def test_save_daily_results_in_db_1C(
         self,
-        db_session_with_3c_stat_loaded,
+        db_session_for_applier_with_3c_stat_loaded,
         contdatainfo_ex,
         simple_obspy_gaps_ex,
         mock_pytables_config,
     ):
-        session, _ = db_session_with_3c_stat_loaded
+        session_factory = db_session_for_applier_with_3c_stat_loaded
         applier = ApplyDetector(
-            1, apply_detector_config, session_factory=lambda: session
+            1, apply_detector_config, session_factory=session_factory
         )
-
+        applier.db_conn.MAX_WAVEFORMS_PER_STORAGE = 1
         date, metadata = contdatainfo_ex
         gaps = simple_obspy_gaps_ex
         error = None
@@ -2067,69 +2093,72 @@ class TestApplyDetectorDB:
         p_post_probs[56000] = 56
         p_post_probs[75000] = 45
 
-        applier.db_conn.get_channel_dates(date, "JK", "TST", "", "HHZ")
+        with applier.db_conn.Session() as session:
+            with session.begin():
+                applier.db_conn.get_channel_dates(session, date, "JK", "TST", "", "HHZ")
 
         applier.save_daily_results_in_db(
             date, continuous_data, metadata, gaps, error, p_post_probs
         )
 
-        # check the metadata
-        assert (
-            applier.db_conn.daily_info.date == date
-        ), "invalid date in DailyDetectionDBInfo"
-        assert (
-            applier.db_conn.daily_info.contdatainfo_id is not None
-        ), "contdatainfo id not set"
-        contdatainfo = session.get(
-            tables.DailyContDataInfo, applier.db_conn.daily_info.contdatainfo_id
-        )
-        assert inspect(contdatainfo).persistent, "contdatainfo not persistent"
-        assert contdatainfo is not None, "contdatainfo not set"
-        assert contdatainfo.chan_pref == "HHZ", "invalid chan_pref"
-        assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
-        assert contdatainfo.proc_start == datetime.strptime(
-            "2011-09-10T00:00:00.00", datetimeformat
-        ), "invalid proc_start"
+        with applier.db_conn.Session() as session:
+            # check the metadata
+            assert (
+                applier.db_conn.daily_info.date == date
+            ), "invalid date in DailyDetectionDBInfo"
+            assert (
+                applier.db_conn.daily_info.contdatainfo_id is not None
+            ), "contdatainfo id not set"
+            contdatainfo = session.get(
+                tables.DailyContDataInfo, applier.db_conn.daily_info.contdatainfo_id
+            )
+            assert inspect(contdatainfo).persistent, "contdatainfo not persistent"
+            assert contdatainfo is not None, "contdatainfo not set"
+            assert contdatainfo.chan_pref == "HHZ", "invalid chan_pref"
+            assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
+            assert contdatainfo.proc_start == datetime.strptime(
+                "2011-09-10T00:00:00.00", datetimeformat
+            ), "invalid proc_start"
 
-        # check the gaps
-        gaps_Z = services.get_gaps(
-            session,
-            applier.db_conn.channel_info.channel_ids["HHZ"],
-            applier.db_conn.daily_info.contdatainfo_id,
-        )
-        assert len(gaps_Z) == 3, "Incorrect number of gaps on HHZ channel"
+            # check the gaps
+            gaps_Z = services.get_gaps(
+                session,
+                applier.db_conn.channel_info.channel_ids["HHZ"],
+                applier.db_conn.daily_info.contdatainfo_id,
+            )
+            assert len(gaps_Z) == 3, "Incorrect number of gaps on HHZ channel"
 
-        # Check the Detection Output
-        assert applier.db_conn.detout_storage_P is None, "detout_storage_P is set"
+            # Check the Detection Output
+            assert applier.db_conn.detout_storage_P is None, "detout_storage_P is set"
 
-        # check the detections
-        det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=True)
-        inserted_dets = services.get_dldetections(
-            session, det_fk_ids["data"], det_fk_ids["method"], 0.0, phase="P"
-        )
-        assert len(inserted_dets) == 4, "incorrect number of detections inserted"
+            # check the detections
+            det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=True)
+            inserted_dets = services.get_dldetections(
+                session, det_fk_ids["data"], det_fk_ids["method"], 0.0, phase="P"
+            )
+            assert len(inserted_dets) == 4, "incorrect number of detections inserted"
 
-        # check the picks
-        picks = services.get_picks(
-            session, applier.db_conn.station_id, "HHZ", phase="P"
-        )
-        assert len(picks) == 3, "incorrect number of picks"
+            # check the picks
+            picks = services.get_picks(
+                session, applier.db_conn.station_id, "HHZ", phase="P"
+            )
+            assert len(picks) == 3, "incorrect number of picks"
 
-        # check the waveforms
-        for pick in picks:
-            wf = services.get_waveforms(session, pick.id)
-            assert len(wf) == 1, "invalid wf size"
+            # check the waveforms
+            for pick in picks:
+                wf = services.get_waveforms(session, pick.id)
+                assert len(wf) == 1, "invalid wf size"
 
     def test_save_daily_results_in_db_3C(
         self,
-        db_session_with_3c_stat_loaded,
+        db_session_for_applier_with_3c_stat_loaded,
         contdatainfo_ex,
         simple_obspy_gaps_ex,
         mock_pytables_config,
     ):
-        session, _ = db_session_with_3c_stat_loaded
+        session_factory = db_session_for_applier_with_3c_stat_loaded
         applier = ApplyDetector(
-            3, apply_detector_config, session_factory=lambda: session
+            3, apply_detector_config, session_factory=session_factory
         )
 
         date, metadata = contdatainfo_ex
@@ -2151,7 +2180,8 @@ class TestApplyDetectorDB:
         s_post_probs[56005] = 55
         s_post_probs[75005] = 75
 
-        applier.db_conn.get_channel_dates(date, "JK", "TST", "", "HHZ")
+        with applier.db_conn.Session() as session:
+            applier.db_conn.get_channel_dates(session, date, "JK", "TST", "", "HHZ")
 
         applier.save_daily_results_in_db(
             date,
@@ -2163,77 +2193,82 @@ class TestApplyDetectorDB:
             s_post_probs=s_post_probs,
         )
 
-        # check the metadata
-        assert (
-            applier.db_conn.daily_info.date == date
-        ), "invalid date in DailyDetectionDBInfo"
-        assert (
-            applier.db_conn.daily_info.contdatainfo_id is not None
-        ), "contdatainfo id not set"
-        contdatainfo = session.get(
-            tables.DailyContDataInfo, applier.db_conn.daily_info.contdatainfo_id
-        )
-        assert inspect(contdatainfo).persistent, "contdatainfo not persistent"
-        assert contdatainfo is not None, "contdatainfo not set"
-        assert contdatainfo.chan_pref == "HH", "invalid chan_pref"
-        assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
-        assert contdatainfo.proc_start == datetime.strptime(
-            "2011-09-10T00:00:00.00", datetimeformat
-        ), "invalid proc_start"
+        with applier.db_conn.Session() as session:
+            # check the metadata
+            assert (
+                applier.db_conn.daily_info.date == date
+            ), "invalid date in DailyDetectionDBInfo"
+            assert (
+                applier.db_conn.daily_info.contdatainfo_id is not None
+            ), "contdatainfo id not set"
+            contdatainfo = session.get(
+                tables.DailyContDataInfo, applier.db_conn.daily_info.contdatainfo_id
+            )
+            assert inspect(contdatainfo).persistent, "contdatainfo not persistent"
+            assert contdatainfo is not None, "contdatainfo not set"
+            assert contdatainfo.chan_pref == "HH", "invalid chan_pref"
+            assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
+            assert contdatainfo.proc_start == datetime.strptime(
+                "2011-09-10T00:00:00.00", datetimeformat
+            ), "invalid proc_start"
 
-        # check the gaps
-        gaps_Z = services.get_gaps(
-            session,
-            applier.db_conn.channel_info.channel_ids["HHZ"],
-            applier.db_conn.daily_info.contdatainfo_id,
-        )
-        assert len(gaps_Z) == 3, "Incorrect number of gaps on HHZ channel"
+            # check the gaps
+            gaps_Z = services.get_gaps(
+                session,
+                applier.db_conn.channel_info.channel_ids["HHZ"],
+                applier.db_conn.daily_info.contdatainfo_id,
+            )
+            assert len(gaps_Z) == 3, "Incorrect number of gaps on HHZ channel"
 
-        # Check the Detection Output
-        assert applier.db_conn.detout_storage_P is None, "detout_storage_P is set"
-        assert applier.db_conn.detout_storage_S is None, "detout_storage_S is set"
+            # Check the Detection Output
+            assert applier.db_conn.detout_storage_P is None, "detout_storage_P is set"
+            assert applier.db_conn.detout_storage_S is None, "detout_storage_S is set"
 
-        # check the detections
-        det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=True)
-        inserted_dets_P = services.get_dldetections(
-            session, det_fk_ids["data"], det_fk_ids["method"], 0.0, phase="P"
-        )
-        assert len(inserted_dets_P) == 4, "incorrect number of P detections inserted"
+            # check the detections
+            det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=True)
+            inserted_dets_P = services.get_dldetections(
+                session, det_fk_ids["data"], det_fk_ids["method"], 0.0, phase="P"
+            )
+            assert (
+                len(inserted_dets_P) == 4
+            ), "incorrect number of P detections inserted"
 
-        # check the picks
-        p_picks = services.get_picks(
-            session, applier.db_conn.station_id, "HH", phase="P"
-        )
-        assert len(p_picks) == 3, "incorrect number of P picks"
+            # check the picks
+            p_picks = services.get_picks(
+                session, applier.db_conn.station_id, "HH", phase="P"
+            )
+            assert len(p_picks) == 3, "incorrect number of P picks"
 
-        # check the waveforms
-        for pick in p_picks:
-            wf = services.get_waveforms(session, pick.id)
-            assert len(wf) == 3, "invalid wf size"
+            # check the waveforms
+            for pick in p_picks:
+                wf = services.get_waveforms(session, pick.id)
+                assert len(wf) == 3, "invalid wf size"
 
-        ## S
-        # check the detections
-        det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=False)
-        inserted_dets_S = services.get_dldetections(
-            session, det_fk_ids["data"], det_fk_ids["method"], 0.0, phase="S"
-        )
-        assert len(inserted_dets_S) == 5, "incorrect number of S detections inserted"
+            ## S
+            # check the detections
+            det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=False)
+            inserted_dets_S = services.get_dldetections(
+                session, det_fk_ids["data"], det_fk_ids["method"], 0.0, phase="S"
+            )
+            assert (
+                len(inserted_dets_S) == 5
+            ), "incorrect number of S detections inserted"
 
-        # check the picks
-        s_picks = services.get_picks(
-            session, applier.db_conn.station_id, "HH", phase="S"
-        )
-        assert len(s_picks) == 4, "incorrect number of picks"
+            # check the picks
+            s_picks = services.get_picks(
+                session, applier.db_conn.station_id, "HH", phase="S"
+            )
+            assert len(s_picks) == 4, "incorrect number of picks"
 
-        # check the waveforms
-        for pick in s_picks:
-            wf = services.get_waveforms(session, pick.id)
-            assert len(wf) == 3, "invalid wf size"
+            # check the waveforms
+            for pick in s_picks:
+                wf = services.get_waveforms(session, pick.id)
+                assert len(wf) == 3, "invalid wf size"
 
     def test_apply_to_multiple_days_dumb(self, db_session, mock_pytables_config):
-        session, _ = db_session
+        session_factory, _ = db_session
         applier = ApplyDetector(
-            1, apply_detector_config, session_factory=lambda: session
+            1, apply_detector_config, session_factory=session_factory
         )
         applier.apply_to_multiple_days(
             "WY", "YWB", "", "EHZ", 2002, 1, 1, 2, debug_N_examples=256
@@ -2244,9 +2279,9 @@ class TestApplyDetectorDB:
     ):
         """Case when the original start date/ndays must be altered given the channel operating days,
         but there is no data on the first day of operation."""
-        session, _ = db_session
+        session_factory, _ = db_session
         applier = ApplyDetector(
-            3, apply_detector_config, session_factory=lambda: session
+            3, apply_detector_config, session_factory=session_factory
         )
         applier.apply_to_multiple_days(
             "WY", "YMV", "01", "HH", 2023, 8, 1, 15, debug_N_examples=256
@@ -2293,29 +2328,30 @@ class TestApplyDetectorDB:
     def db_session_with_gap_in_channel_dates(
         self, db_session, stat_ex, channel_operating_gap_ex
     ):
-        session, patch_session = db_session  # Unpack session & patch function
+        session_factory, _ = db_session  # Unpack session & patch function
 
         stat_dict = stat_ex
         chan_dict_list = channel_operating_gap_ex
 
-        stat = services.insert_station(session, **stat_dict)
-        session.flush()
+        with session_factory() as session:
+            with session.begin():
+                stat = services.insert_station(session, **stat_dict)
+                session.flush()
 
-        for chan in chan_dict_list:
-            chan["sta_id"] = stat.id
+                for chan in chan_dict_list:
+                    chan["sta_id"] = stat.id
 
-        services.insert_channels(session, chan_dict_list)
-        session.commit()
+                services.insert_channels(session, chan_dict_list)
 
-        return session
+        return session_factory
 
     def test_apply_to_multiple_days_channel_operating_gap(
         self, db_session_with_gap_in_channel_dates, mock_pytables_config
     ):
         """Handle the case when there is a gap in the operating days of the channels"""
-        session = db_session_with_gap_in_channel_dates
+        session_factory = db_session_with_gap_in_channel_dates
         applier = ApplyDetector(
-            3, apply_detector_config, session_factory=lambda: session
+            3, apply_detector_config, session_factory=session_factory
         )
         applier.apply_to_multiple_days(
             "JK", "TST", "00", "BH", 2023, 9, 15, 12, debug_N_examples=256
@@ -2323,32 +2359,40 @@ class TestApplyDetectorDB:
 
         from sqlalchemy import select
 
-        no_data_rows = session.execute(
-            select(tables.DailyContDataInfo.date, tables.DailyContDataInfo.error)
-            .join(tables.Station, tables.Station.id == tables.DailyContDataInfo.sta_id)
-            .where(tables.Station.sta == "TST")
-            .where(tables.DailyContDataInfo.error == "no_data")
-        ).all()
+        with session_factory() as session:
+            no_data_rows = session.execute(
+                select(tables.DailyContDataInfo.date, tables.DailyContDataInfo.error)
+                .join(
+                    tables.Station, tables.Station.id == tables.DailyContDataInfo.sta_id
+                )
+                .where(tables.Station.sta == "TST")
+                .where(tables.DailyContDataInfo.error == "no_data")
+            ).all()
 
-        assert len(no_data_rows) == 2, "expected 2 days that have no_data error"
+            assert len(no_data_rows) == 2, "expected 2 days that have no_data error"
 
-        chan_gap_rows = session.execute(
-            select(tables.DailyContDataInfo.date, tables.DailyContDataInfo.error)
-            .join(tables.Station, tables.Station.id == tables.DailyContDataInfo.sta_id)
-            .where(tables.Station.sta == "TST")
-            .where(tables.DailyContDataInfo.error == "gap_between_new_channels")
-        ).all()
+            chan_gap_rows = session.execute(
+                select(tables.DailyContDataInfo.date, tables.DailyContDataInfo.error)
+                .join(
+                    tables.Station, tables.Station.id == tables.DailyContDataInfo.sta_id
+                )
+                .where(tables.Station.sta == "TST")
+                .where(tables.DailyContDataInfo.error == "gap_between_new_channels")
+            ).all()
 
-        assert (
-            len(chan_gap_rows) == 10
-        ), "expected 2 days that have gap_between_new_channels error"
+            assert (
+                len(chan_gap_rows) == 10
+            ), "expected 2 days that have gap_between_new_channels error"
 
     def test_save_daily_results_in_db_1C_gaps_empty(
-        self, db_session_with_3c_stat_loaded, contdatainfo_ex, mock_pytables_config
+        self,
+        db_session_for_applier_with_3c_stat_loaded,
+        contdatainfo_ex,
+        mock_pytables_config,
     ):
-        session, _ = db_session_with_3c_stat_loaded
+        session_factory = db_session_for_applier_with_3c_stat_loaded
         applier = ApplyDetector(
-            1, apply_detector_config, session_factory=lambda: session
+            1, apply_detector_config, session_factory=session_factory
         )
 
         date, metadata = contdatainfo_ex
@@ -2363,30 +2407,35 @@ class TestApplyDetectorDB:
         p_post_probs[56000] = 50
         p_post_probs[75000] = 45
 
-        applier.db_conn.get_channel_dates(date, "JK", "TST", "", "HHZ")
+        with applier.db_conn.Session() as session:
+            applier.db_conn.get_channel_dates(session, date, "JK", "TST", "", "HHZ")
 
         applier.save_daily_results_in_db(
             date, continuous_data, metadata, gaps, error, p_post_probs
         )
 
-        # check the gaps
-        gaps_Z = services.get_gaps(
-            session,
-            applier.db_conn.channel_info.channel_ids["HHZ"],
-            applier.db_conn.daily_info.contdatainfo_id,
-        )
-        assert len(gaps_Z) == 0, "Incorrect number of gaps on HHZ channel"
+        with applier.db_conn.Session() as session:
+            # check the gaps
+            gaps_Z = services.get_gaps(
+                session,
+                applier.db_conn.channel_info.channel_ids["HHZ"],
+                applier.db_conn.daily_info.contdatainfo_id,
+            )
+            assert len(gaps_Z) == 0, "Incorrect number of gaps on HHZ channel"
 
-        assert (
-            applier.db_conn.daily_info.dldet_output_id_P is None
-        ), "the detector output should not be set"
+            assert (
+                applier.db_conn.daily_info.dldet_output_id_P is None
+            ), "the detector output should not be set"
 
     def test_save_daily_results_in_db_1C_error(
-        self, db_session_with_3c_stat_loaded, contdatainfo_ex, mock_pytables_config
+        self,
+        db_session_for_applier_with_3c_stat_loaded,
+        contdatainfo_ex,
+        mock_pytables_config,
     ):
-        session, _ = db_session_with_3c_stat_loaded
+        session_factory = db_session_for_applier_with_3c_stat_loaded
         applier = ApplyDetector(
-            1, apply_detector_config, session_factory=lambda: session
+            1, apply_detector_config, session_factory=session_factory
         )
 
         date, _ = contdatainfo_ex
@@ -2396,94 +2445,21 @@ class TestApplyDetectorDB:
         continuous_data = None
         p_post_probs = None
 
-        applier.db_conn.get_channel_dates(date, "JK", "TST", "", "HHZ")
+        with applier.db_conn.Session() as session:
+            applier.db_conn.get_channel_dates(session, date, "JK", "TST", "", "HHZ")
 
         applier.save_daily_results_in_db(
             date, continuous_data, None, gaps, error, p_post_probs
         )
 
-        # check the gaps
-        gaps_Z = services.get_gaps(
-            session,
-            applier.db_conn.channel_info.channel_ids["HHZ"],
-            applier.db_conn.daily_info.contdatainfo_id,
-        )
-        assert len(gaps_Z) == 0, "Incorrect number of gaps on HHZ channel"
-
-        # check the metadata
-        assert (
-            applier.db_conn.daily_info.date == date
-        ), "invalid date in DailyDetectionDBInfo"
-        assert (
-            applier.db_conn.daily_info.contdatainfo_id is not None
-        ), "contdatainfo id not set"
-        contdatainfo = session.get(
-            tables.DailyContDataInfo, applier.db_conn.daily_info.contdatainfo_id
-        )
-        assert inspect(contdatainfo).persistent, "contdatainfo not persistent"
-        assert contdatainfo is not None, "contdatainfo not set"
-        assert contdatainfo.chan_pref == "HHZ", "invalid chan_pref"
-        assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
-        assert contdatainfo.orig_start is None, "invalid orig_start"
-        assert contdatainfo.proc_start is None, "invalid proc_start"
-        assert contdatainfo.error == "no_data", "invalid error"
-
-        assert (
-            applier.db_conn.detout_storage_P is None
-        ), "detout storage should not be opened"
-        assert (
-            applier.db_conn.daily_info.dldet_output_id_P is None
-        ), "the detector output should not be set"
-
-
-apply_detector_config_pytables = deepcopy(apply_detector_config)
-apply_detector_config_pytables["database"]["use_pytables"] = True
-
-
-class TestApplyDetectorDBPytables:
-    def test_init_3c(self, db_session):
-        session, _ = db_session
-        applier = ApplyDetector(
-            3, apply_detector_config_pytables, session_factory=lambda: session
-        )
-        assert applier.use_pytables, "use_pytables not set"
-
-    def test_init_1c(self, db_session):
-        session, _ = db_session
-        applier = ApplyDetector(
-            1, apply_detector_config_pytables, session_factory=lambda: session
-        )
-        assert applier.use_pytables, "use_pytables not set"
-
-    def test_save_daily_results_in_db_1C(
-        self,
-        db_session_with_3c_stat_loaded,
-        contdatainfo_ex,
-        simple_obspy_gaps_ex,
-        mock_pytables_config,
-    ):
-        session, _ = db_session_with_3c_stat_loaded
-        applier = ApplyDetector(
-            1, apply_detector_config_pytables, session_factory=lambda: session
-        )
-
-        date, metadata = contdatainfo_ex
-        gaps = simple_obspy_gaps_ex
-        error = None
-
-        continuous_data = np.zeros((metadata["npts"], 1))
-        p_post_probs = np.zeros(metadata["npts"])
-        p_post_probs[10000] = 90
-        p_post_probs[25000] = 85
-        p_post_probs[40000] = 80
-        p_post_probs[56000] = 56
-        p_post_probs[75000] = 45
-
-        applier.db_conn.get_channel_dates(date, "JK", "TST", "", "HHZ")
-        try:
-            applier.save_daily_results_in_db(
-                date, continuous_data, metadata, gaps, error, p_post_probs
+        with applier.db_conn.Session() as session:
+            # check the gaps
+            gaps_Z = services.get_gaps(
+                session,
+                applier.db_conn.channel_info.channel_ids["HHZ"],
+                applier.db_conn.daily_info.contdatainfo_id,
             )
+            assert len(gaps_Z) == 0, "Incorrect number of gaps on HHZ channel"
 
             # check the metadata
             assert (
@@ -2499,55 +2475,137 @@ class TestApplyDetectorDBPytables:
             assert contdatainfo is not None, "contdatainfo not set"
             assert contdatainfo.chan_pref == "HHZ", "invalid chan_pref"
             assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
-            assert contdatainfo.proc_start == datetime.strptime(
-                "2011-09-10T00:00:00.00", datetimeformat
-            ), "invalid proc_start"
+            assert contdatainfo.orig_start is None, "invalid orig_start"
+            assert contdatainfo.proc_start is None, "invalid proc_start"
+            assert contdatainfo.error == "no_data", "invalid error"
 
-            # check the gaps
-            gaps_Z = services.get_gaps(
-                session,
-                applier.db_conn.channel_info.channel_ids["HHZ"],
-                applier.db_conn.daily_info.contdatainfo_id,
-            )
-            assert len(gaps_Z) == 3, "Incorrect number of gaps on HHZ channel"
-
-            # Check the Detection Output
             assert (
-                applier.db_conn.detout_storage_P is not None
-            ), "detout_storage_P not set"
+                applier.db_conn.detout_storage_P is None
+            ), "detout storage should not be opened"
             assert (
-                applier.db_conn.detout_storage_P.table.nrows == 1
-            ), "detout_storage should have 1 entry"
+                applier.db_conn.daily_info.dldet_output_id_P is None
+            ), "the detector output should not be set"
+
+
+apply_detector_config_pytables = deepcopy(apply_detector_config)
+apply_detector_config_pytables["database"]["use_pytables"] = True
+
+
+class TestApplyDetectorDBPytables:
+    def test_init_3c(self, db_session):
+        session_factory, _ = db_session
+        applier = ApplyDetector(
+            3, apply_detector_config_pytables, session_factory=session_factory
+        )
+        assert applier.use_pytables, "use_pytables not set"
+
+    def test_init_1c(self, db_session):
+        session_factory, _ = db_session
+        applier = ApplyDetector(
+            1, apply_detector_config_pytables, session_factory=session_factory
+        )
+        assert applier.use_pytables, "use_pytables not set"
+
+    def test_save_daily_results_in_db_1C(
+        self,
+        db_session_for_applier_with_3c_stat_loaded,
+        contdatainfo_ex,
+        simple_obspy_gaps_ex,
+        mock_pytables_config,
+    ):
+        session_factory = db_session_for_applier_with_3c_stat_loaded
+        applier = ApplyDetector(
+            1, apply_detector_config_pytables, session_factory=session_factory
+        )
+
+        date, metadata = contdatainfo_ex
+        gaps = simple_obspy_gaps_ex
+        error = None
+
+        continuous_data = np.zeros((metadata["npts"], 1))
+        p_post_probs = np.zeros(metadata["npts"])
+        p_post_probs[10000] = 90
+        p_post_probs[25000] = 85
+        p_post_probs[40000] = 80
+        p_post_probs[56000] = 56
+        p_post_probs[75000] = 45
+
+        with applier.db_conn.Session() as session:
+            applier.db_conn.get_channel_dates(session, date, "JK", "TST", "", "HHZ")
+        try:
+            applier.save_daily_results_in_db(
+                date, continuous_data, metadata, gaps, error, p_post_probs
+            )
+
+            # check the metadata
             assert (
-                applier.db_conn.daily_info.dldet_output_id_P is not None
-            ), "the detector output does not have an id in the db"
+                applier.db_conn.daily_info.date == date
+            ), "invalid date in DailyDetectionDBInfo"
+            assert (
+                applier.db_conn.daily_info.contdatainfo_id is not None
+            ), "contdatainfo id not set"
 
-            # check the detections
-            det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=True)
-            inserted_dets = services.get_dldetections(
-                session, det_fk_ids["data"], det_fk_ids["method"], 0.0, phase="P"
-            )
-            assert len(inserted_dets) == 4, "incorrect number of detections inserted"
+            with applier.db_conn.Session() as session:
+                contdatainfo = session.get(
+                    tables.DailyContDataInfo, applier.db_conn.daily_info.contdatainfo_id
+                )
+                assert inspect(contdatainfo).persistent, "contdatainfo not persistent"
+                assert contdatainfo is not None, "contdatainfo not set"
+                assert contdatainfo.chan_pref == "HHZ", "invalid chan_pref"
+                assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
+                assert contdatainfo.proc_start == datetime.strptime(
+                    "2011-09-10T00:00:00.00", datetimeformat
+                ), "invalid proc_start"
 
-            # check the picks
-            picks = services.get_picks(
-                session, applier.db_conn.station_id, "HHZ", phase="P"
-            )
-            assert len(picks) == 3, "incorrect number of picks"
+                # check the gaps
+                gaps_Z = services.get_gaps(
+                    session,
+                    applier.db_conn.channel_info.channel_ids["HHZ"],
+                    applier.db_conn.daily_info.contdatainfo_id,
+                )
+                assert len(gaps_Z) == 3, "Incorrect number of gaps on HHZ channel"
 
-            for cid, cstore in applier.db_conn.waveform_storage_dict_P.items():
-                assert cstore.table.nrows == 3, "incorrect number of waveforms saved"
-
-            # check the waveforms
-            for pick in picks:
-                wf_info = services.get_waveform_infos(session, pick.id)
-                assert len(wf_info) == 1, "invalid wf_info size"
+                # Check the Detection Output
                 assert (
-                    applier.db_conn.waveform_storage_dict_P[
-                        wf_info[0].chan_id
-                    ].select_row(wf_info[0].id)
-                    is not None
-                ), "no waveform data found for corresponding wf_info.id"
+                    applier.db_conn.detout_storage_P is not None
+                ), "detout_storage_P not set"
+                assert (
+                    applier.db_conn.detout_storage_P.table.nrows == 1
+                ), "detout_storage should have 1 entry"
+                assert (
+                    applier.db_conn.daily_info.dldet_output_id_P is not None
+                ), "the detector output does not have an id in the db"
+
+                # check the detections
+                det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=True)
+                inserted_dets = services.get_dldetections(
+                    session, det_fk_ids["data"], det_fk_ids["method"], 0.0, phase="P"
+                )
+                assert (
+                    len(inserted_dets) == 4
+                ), "incorrect number of detections inserted"
+
+                # check the picks
+                picks = services.get_picks(
+                    session, applier.db_conn.station_id, "HHZ", phase="P"
+                )
+                assert len(picks) == 3, "incorrect number of picks"
+
+                for cid, cstore in applier.db_conn.waveform_storage_dict_P.items():
+                    assert (
+                        cstore.table.nrows == 3
+                    ), "incorrect number of waveforms saved"
+
+                # check the waveforms
+                for pick in picks:
+                    wf_info = services.get_waveform_infos(session, pick.id)
+                    assert len(wf_info) == 1, "invalid wf_info size"
+                    assert (
+                        applier.db_conn.waveform_storage_dict_P[
+                            wf_info[0].chan_id
+                        ].select_row(wf_info[0].id)
+                        is not None
+                    ), "no waveform data found for corresponding wf_info.id"
         finally:
             applier.db_conn.close_open_pytables()
             if applier.db_conn.detout_storage_P is not None:
@@ -2558,14 +2616,14 @@ class TestApplyDetectorDBPytables:
 
     def test_save_daily_results_in_db_3C(
         self,
-        db_session_with_3c_stat_loaded,
+        db_session_for_applier_with_3c_stat_loaded,
         contdatainfo_ex,
         simple_obspy_gaps_ex,
         mock_pytables_config,
     ):
-        session, _ = db_session_with_3c_stat_loaded
+        session_factory = db_session_for_applier_with_3c_stat_loaded
         applier = ApplyDetector(
-            3, apply_detector_config_pytables, session_factory=lambda: session
+            3, apply_detector_config_pytables, session_factory=session_factory
         )
 
         date, metadata = contdatainfo_ex
@@ -2587,7 +2645,8 @@ class TestApplyDetectorDBPytables:
         s_post_probs[56000] = 55
         s_post_probs[75000] = 75
 
-        applier.db_conn.get_channel_dates(date, "JK", "TST", "", "HH")
+        with applier.db_conn.Session() as session:
+            applier.db_conn.get_channel_dates(session, date, "JK", "TST", "", "HH")
         try:
             applier.save_daily_results_in_db(
                 date, continuous_data, metadata, gaps, error, p_post_probs, s_post_probs
@@ -2600,103 +2659,111 @@ class TestApplyDetectorDBPytables:
             assert (
                 applier.db_conn.daily_info.contdatainfo_id is not None
             ), "contdatainfo id not set"
-            contdatainfo = session.get(
-                tables.DailyContDataInfo, applier.db_conn.daily_info.contdatainfo_id
-            )
-            assert inspect(contdatainfo).persistent, "contdatainfo not persistent"
-            assert contdatainfo is not None, "contdatainfo not set"
-            assert contdatainfo.chan_pref == "HH", "invalid chan_pref"
-            assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
-            assert contdatainfo.proc_start == datetime.strptime(
-                "2011-09-10T00:00:00.00", datetimeformat
-            ), "invalid proc_start"
 
-            # check the gaps
-            gaps_Z = services.get_gaps(
-                session,
-                applier.db_conn.channel_info.channel_ids["HHZ"],
-                applier.db_conn.daily_info.contdatainfo_id,
-            )
-            assert len(gaps_Z) == 3, "Incorrect number of gaps on HHZ channel"
+            with applier.db_conn.Session() as session:
+                contdatainfo = session.get(
+                    tables.DailyContDataInfo, applier.db_conn.daily_info.contdatainfo_id
+                )
+                assert inspect(contdatainfo).persistent, "contdatainfo not persistent"
+                assert contdatainfo is not None, "contdatainfo not set"
+                assert contdatainfo.chan_pref == "HH", "invalid chan_pref"
+                assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
+                assert contdatainfo.proc_start == datetime.strptime(
+                    "2011-09-10T00:00:00.00", datetimeformat
+                ), "invalid proc_start"
 
-            # Check the Detection Output
-            assert (
-                applier.db_conn.detout_storage_P is not None
-            ), "detout_storage_P not set"
-            assert (
-                applier.db_conn.detout_storage_P.table.nrows == 1
-            ), "detout_storage_P should have 1 entry"
-            assert (
-                applier.db_conn.daily_info.dldet_output_id_P is not None
-            ), "the P detector output does not have an id in the db"
+                # check the gaps
+                gaps_Z = services.get_gaps(
+                    session,
+                    applier.db_conn.channel_info.channel_ids["HHZ"],
+                    applier.db_conn.daily_info.contdatainfo_id,
+                )
+                assert len(gaps_Z) == 3, "Incorrect number of gaps on HHZ channel"
 
-            # Check the Detection Output
-            assert (
-                applier.db_conn.detout_storage_S is not None
-            ), "detout_storage_S not set"
-            assert (
-                applier.db_conn.detout_storage_S.table.nrows == 1
-            ), "detout_storage_S should have 1 entry"
-            assert (
-                applier.db_conn.daily_info.dldet_output_id_S is not None
-            ), "the S detector output does not have an id in the db"
-
-            # check the detections
-            det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=True)
-            inserted_dets = services.get_dldetections(
-                session, det_fk_ids["data"], det_fk_ids["method"], 0.0, phase="P"
-            )
-            assert len(inserted_dets) == 4, "incorrect number of detections inserted"
-
-            # check the picks
-            p_picks = services.get_picks(
-                session, applier.db_conn.station_id, "HH", phase="P"
-            )
-            assert len(p_picks) == 3, "incorrect number of P picks"
-
-            for cid, cstore in applier.db_conn.waveform_storage_dict_P.items():
-                assert cstore.table.nrows == 3, "incorrect number of P waveforms saved"
-
-            # check the waveforms
-            for pick in p_picks:
-                wf_info = services.get_waveform_infos(session, pick.id)
-                assert len(wf_info) == 3, "invalid P wf_info size"
+                # Check the Detection Output
                 assert (
-                    applier.db_conn.waveform_storage_dict_P[
-                        wf_info[0].chan_id
-                    ].select_row(wf_info[0].id)
-                    is not None
-                ), "no P waveform data found for corresponding wf_info.id"
-
-            # S
-            # check the detections
-            det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=False)
-            s_inserted_dets = services.get_dldetections(
-                session, det_fk_ids["data"], det_fk_ids["method"], 0.0, phase="S"
-            )
-            assert (
-                len(s_inserted_dets) == 5
-            ), "incorrect number of S detections inserted"
-
-            # check the picks
-            s_picks = services.get_picks(
-                session, applier.db_conn.station_id, "HH", phase="S"
-            )
-            assert len(s_picks) == 4, "incorrect number of S picks"
-
-            for cid, cstore in applier.db_conn.waveform_storage_dict_S.items():
-                assert cstore.table.nrows == 4, "incorrect number of S waveforms saved"
-
-            # check the waveforms
-            for pick in s_picks:
-                wf_info = services.get_waveform_infos(session, pick.id)
-                assert len(wf_info) == 3, "invalid S wf_info size"
+                    applier.db_conn.detout_storage_P is not None
+                ), "detout_storage_P not set"
                 assert (
-                    applier.db_conn.waveform_storage_dict_S[
-                        wf_info[0].chan_id
-                    ].select_row(wf_info[0].id)
-                    is not None
-                ), "no S waveform data found for corresponding wf_info.id"
+                    applier.db_conn.detout_storage_P.table.nrows == 1
+                ), "detout_storage_P should have 1 entry"
+                assert (
+                    applier.db_conn.daily_info.dldet_output_id_P is not None
+                ), "the P detector output does not have an id in the db"
+
+                # Check the Detection Output
+                assert (
+                    applier.db_conn.detout_storage_S is not None
+                ), "detout_storage_S not set"
+                assert (
+                    applier.db_conn.detout_storage_S.table.nrows == 1
+                ), "detout_storage_S should have 1 entry"
+                assert (
+                    applier.db_conn.daily_info.dldet_output_id_S is not None
+                ), "the S detector output does not have an id in the db"
+
+                # check the detections
+                det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=True)
+                inserted_dets = services.get_dldetections(
+                    session, det_fk_ids["data"], det_fk_ids["method"], 0.0, phase="P"
+                )
+                assert (
+                    len(inserted_dets) == 4
+                ), "incorrect number of detections inserted"
+
+                # check the picks
+                p_picks = services.get_picks(
+                    session, applier.db_conn.station_id, "HH", phase="P"
+                )
+                assert len(p_picks) == 3, "incorrect number of P picks"
+
+                for cid, cstore in applier.db_conn.waveform_storage_dict_P.items():
+                    assert (
+                        cstore.table.nrows == 3
+                    ), "incorrect number of P waveforms saved"
+
+                # check the waveforms
+                for pick in p_picks:
+                    wf_info = services.get_waveform_infos(session, pick.id)
+                    assert len(wf_info) == 3, "invalid P wf_info size"
+                    assert (
+                        applier.db_conn.waveform_storage_dict_P[
+                            wf_info[0].chan_id
+                        ].select_row(wf_info[0].id)
+                        is not None
+                    ), "no P waveform data found for corresponding wf_info.id"
+
+                # S
+                # check the detections
+                det_fk_ids = applier.db_conn.get_dldet_fk_ids(is_p=False)
+                s_inserted_dets = services.get_dldetections(
+                    session, det_fk_ids["data"], det_fk_ids["method"], 0.0, phase="S"
+                )
+                assert (
+                    len(s_inserted_dets) == 5
+                ), "incorrect number of S detections inserted"
+
+                # check the picks
+                s_picks = services.get_picks(
+                    session, applier.db_conn.station_id, "HH", phase="S"
+                )
+                assert len(s_picks) == 4, "incorrect number of S picks"
+
+                for cid, cstore in applier.db_conn.waveform_storage_dict_S.items():
+                    assert (
+                        cstore.table.nrows == 4
+                    ), "incorrect number of S waveforms saved"
+
+                # check the waveforms
+                for pick in s_picks:
+                    wf_info = services.get_waveform_infos(session, pick.id)
+                    assert len(wf_info) == 3, "invalid S wf_info size"
+                    assert (
+                        applier.db_conn.waveform_storage_dict_S[
+                            wf_info[0].chan_id
+                        ].select_row(wf_info[0].id)
+                        is not None
+                    ), "no S waveform data found for corresponding wf_info.id"
 
         finally:
             applier.db_conn.close_open_pytables()
@@ -2712,9 +2779,9 @@ class TestApplyDetectorDBPytables:
                     os.remove(cstore.file_path)
 
     def test_apply_to_multiple_days_dumb(self, db_session, mock_pytables_config):
-        session, _ = db_session
+        session_factory, _ = db_session
         applier = ApplyDetector(
-            1, apply_detector_config_pytables, session_factory=lambda: session
+            1, apply_detector_config_pytables, session_factory=session_factory
         )
         try:
             applier.apply_to_multiple_days(
@@ -2740,11 +2807,14 @@ class TestApplyDetectorDBPytables:
                     os.remove(cstore.file_path)
 
     def test_save_daily_results_in_db_1C_gaps_empty(
-        self, db_session_with_3c_stat_loaded, contdatainfo_ex, mock_pytables_config
+        self,
+        db_session_for_applier_with_3c_stat_loaded,
+        contdatainfo_ex,
+        mock_pytables_config,
     ):
-        session, _ = db_session_with_3c_stat_loaded
+        session_factory = db_session_for_applier_with_3c_stat_loaded
         applier = ApplyDetector(
-            1, apply_detector_config_pytables, session_factory=lambda: session
+            1, apply_detector_config_pytables, session_factory=session_factory
         )
 
         date, metadata = contdatainfo_ex
@@ -2759,18 +2829,21 @@ class TestApplyDetectorDBPytables:
         p_post_probs[56000] = 50
         p_post_probs[75000] = 45
 
-        applier.db_conn.get_channel_dates(date, "JK", "TST", "", "HHZ")
+        with applier.db_conn.Session() as session:
+            applier.db_conn.get_channel_dates(session, date, "JK", "TST", "", "HHZ")
         try:
             applier.save_daily_results_in_db(
                 date, continuous_data, metadata, gaps, error, p_post_probs
             )
 
-            # check the gaps
-            gaps_Z = services.get_gaps(
-                session,
-                applier.db_conn.channel_info.channel_ids["HHZ"],
-                applier.db_conn.daily_info.contdatainfo_id,
-            )
+            with applier.db_conn.Session() as session:
+                # check the gaps
+                gaps_Z = services.get_gaps(
+                    session,
+                    applier.db_conn.channel_info.channel_ids["HHZ"],
+                    applier.db_conn.daily_info.contdatainfo_id,
+                )
+
             assert len(gaps_Z) == 0, "Incorrect number of gaps on HHZ channel"
 
             assert (
@@ -2788,11 +2861,14 @@ class TestApplyDetectorDBPytables:
                     os.remove(cstore.file_path)
 
     def test_save_daily_results_in_db_1C_error(
-        self, db_session_with_3c_stat_loaded, contdatainfo_ex, mock_pytables_config
+        self,
+        db_session_for_applier_with_3c_stat_loaded,
+        contdatainfo_ex,
+        mock_pytables_config,
     ):
-        session, _ = db_session_with_3c_stat_loaded
+        session_factory = db_session_for_applier_with_3c_stat_loaded
         applier = ApplyDetector(
-            1, apply_detector_config_pytables, session_factory=lambda: session
+            1, apply_detector_config_pytables, session_factory=session_factory
         )
 
         date, _ = contdatainfo_ex
@@ -2802,37 +2878,39 @@ class TestApplyDetectorDBPytables:
         continuous_data = None
         p_post_probs = None
 
-        applier.db_conn.get_channel_dates(date, "JK", "TST", "", "HHZ")
+        with applier.db_conn.Session() as session:
+            applier.db_conn.get_channel_dates(session, date, "JK", "TST", "", "HHZ")
 
         applier.save_daily_results_in_db(
             date, continuous_data, None, gaps, error, p_post_probs
         )
 
-        # check the gaps
-        gaps_Z = services.get_gaps(
-            session,
-            applier.db_conn.channel_info.channel_ids["HHZ"],
-            applier.db_conn.daily_info.contdatainfo_id,
-        )
-        assert len(gaps_Z) == 0, "Incorrect number of gaps on HHZ channel"
+        with applier.db_conn.Session() as session:
+            # check the gaps
+            gaps_Z = services.get_gaps(
+                session,
+                applier.db_conn.channel_info.channel_ids["HHZ"],
+                applier.db_conn.daily_info.contdatainfo_id,
+            )
+            assert len(gaps_Z) == 0, "Incorrect number of gaps on HHZ channel"
 
-        # check the metadata
-        assert (
-            applier.db_conn.daily_info.date == date
-        ), "invalid date in DailyDetectionDBInfo"
-        assert (
-            applier.db_conn.daily_info.contdatainfo_id is not None
-        ), "contdatainfo id not set"
-        contdatainfo = session.get(
-            tables.DailyContDataInfo, applier.db_conn.daily_info.contdatainfo_id
-        )
-        assert inspect(contdatainfo).persistent, "contdatainfo not persistent"
-        assert contdatainfo is not None, "contdatainfo not set"
-        assert contdatainfo.chan_pref == "HHZ", "invalid chan_pref"
-        assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
-        assert contdatainfo.orig_start is None, "invalid orig_start"
-        assert contdatainfo.proc_start is None, "invalid proc_start"
-        assert contdatainfo.error == "no_data", "invalid error"
+            # check the metadata
+            assert (
+                applier.db_conn.daily_info.date == date
+            ), "invalid date in DailyDetectionDBInfo"
+            assert (
+                applier.db_conn.daily_info.contdatainfo_id is not None
+            ), "contdatainfo id not set"
+            contdatainfo = session.get(
+                tables.DailyContDataInfo, applier.db_conn.daily_info.contdatainfo_id
+            )
+            assert inspect(contdatainfo).persistent, "contdatainfo not persistent"
+            assert contdatainfo is not None, "contdatainfo not set"
+            assert contdatainfo.chan_pref == "HHZ", "invalid chan_pref"
+            assert contdatainfo.date == date.date(), "contdatainfo date incorrect"
+            assert contdatainfo.orig_start is None, "invalid orig_start"
+            assert contdatainfo.proc_start is None, "invalid proc_start"
+            assert contdatainfo.error == "no_data", "invalid error"
 
         assert (
             applier.db_conn.detout_storage_P is None
@@ -2873,7 +2951,7 @@ class TestMultiSWAGPickerDB:
 
     @pytest.fixture
     def db_session_with_waveform_info(self, db_session, mock_pytables_config):
-        db_session, _ = db_session
+        session_factory, _ = db_session
         ids = {}
         # Insert the stations
         sta_dict = {
@@ -2882,139 +2960,164 @@ class TestMultiSWAGPickerDB:
             "lon": -110.67917,
             "elev": 2336,
         }
-        sta1 = services.insert_station(db_session, "JK", "TST1", **sta_dict)
-        db_session.flush()
 
-        # Insert the channels
-        chan_info = {
-            "loc": "01",
-            "ondate": datetime.strptime("2010-01-01T00:00:00.00", datetimeformat),
-            "samp_rate": 100.0,
-            "clock_drift": 1e-5,
-            "sensor_desc": "Nanometrics something or other",
-            "sensit_units": "M/S",
-            "sensit_val": 9e9,
-            "sensit_freq": 5,
-            "lat": 44.7155,
-            "lon": -110.67917,
-            "elev": 2336,
-            "depth": 100,
-            "azimuth": 90,
-            "dip": -90,
-            "offdate": None,
-            "overall_gain_vel": None,
-        }
-        all_channel_dict = {}
-        for id in [sta1.id]:
-            for code in ["HHZ", "HHE", "HHN"]:
-                chan_info["seed_code"] = code
-                chan_info["sta_id"] = id
-                all_channel_dict[f"{id}.{code}"] = services.insert_channel(
-                    db_session, chan_info
+        with session_factory() as db_session:
+            with db_session.begin():
+                sta1 = services.insert_station(db_session, "JK", "TST1", **sta_dict)
+                db_session.flush()
+
+                # Insert the channels
+                chan_info = {
+                    "loc": "01",
+                    "ondate": datetime.strptime(
+                        "2010-01-01T00:00:00.00", datetimeformat
+                    ),
+                    "samp_rate": 100.0,
+                    "clock_drift": 1e-5,
+                    "sensor_desc": "Nanometrics something or other",
+                    "sensit_units": "M/S",
+                    "sensit_val": 9e9,
+                    "sensit_freq": 5,
+                    "lat": 44.7155,
+                    "lon": -110.67917,
+                    "elev": 2336,
+                    "depth": 100,
+                    "azimuth": 90,
+                    "dip": -90,
+                    "offdate": None,
+                    "overall_gain_vel": None,
+                }
+                all_channel_dict = {}
+                for id in [sta1.id]:
+                    for code in ["HHZ", "HHE", "HHN"]:
+                        chan_info["seed_code"] = code
+                        chan_info["sta_id"] = id
+                        all_channel_dict[f"{id}.{code}"] = services.insert_channel(
+                            db_session, chan_info
+                        )
+
+                db_session.flush()
+
+                # Insert P Picks
+                p_dict = {
+                    "chan_pref": "HH",
+                    "phase": "P",
+                    "ptime": datetime.strptime(
+                        "2010-02-01T00:00:00.00", datetimeformat
+                    ),
+                    "auth": "TEST",
+                }
+                p1 = services.insert_pick(db_session, sta1.id, **p_dict)
+                p_dict["ptime"] = datetime.strptime(
+                    "2010-02-02T00:00:00.00", datetimeformat
                 )
 
-        db_session.flush()
+                # Insert S Picks
+                s_dict = {
+                    "chan_pref": "HH",
+                    "phase": "S",
+                    "ptime": datetime.strptime(
+                        "2010-02-01T12:00:00.00", datetimeformat
+                    ),
+                    "auth": "TEST",
+                }
+                s1 = services.insert_pick(db_session, sta1.id, **s_dict)
+                s_dict["ptime"] = datetime.strptime(
+                    "2010-02-02T12:00:00.00", datetimeformat
+                )
 
-        # Insert P Picks
-        p_dict = {
-            "chan_pref": "HH",
-            "phase": "P",
-            "ptime": datetime.strptime("2010-02-01T00:00:00.00", datetimeformat),
-            "auth": "TEST",
-        }
-        p1 = services.insert_pick(db_session, sta1.id, **p_dict)
-        p_dict["ptime"] = datetime.strptime("2010-02-02T00:00:00.00", datetimeformat)
+                # Insert waveform sources
+                wf_source1 = services.insert_waveform_source(
+                    db_session, "TEST-ExtractContData", "Extract snippets"
+                )
 
-        # Insert S Picks
-        s_dict = {
-            "chan_pref": "HH",
-            "phase": "S",
-            "ptime": datetime.strptime("2010-02-01T12:00:00.00", datetimeformat),
-            "auth": "TEST",
-        }
-        s1 = services.insert_pick(db_session, sta1.id, **s_dict)
-        s_dict["ptime"] = datetime.strptime("2010-02-02T12:00:00.00", datetimeformat)
+                db_session.flush()
+                # for src in [wf_source1, wf_source2, wf_source3]:
+                #     print(src.id, src.name)
 
-        # Insert waveform sources
-        wf_source1 = services.insert_waveform_source(
-            db_session, "TEST-ExtractContData", "Extract snippets"
-        )
+                ids["p_pick1"] = p1.id
+                ids["s_pick1"] = s1.id
+                ids["wf_source1"] = wf_source1.id
 
-        db_session.flush()
-        # for src in [wf_source1, wf_source2, wf_source3]:
-        #     print(src.id, src.name)
+                try:
+                    # Open waveform storages
+                    wf_storages = {}
+                    for code in ["HHZ", "HHE", "HHN"]:
+                        for phase in ["P", "S"]:
+                            wf_storage = pytables_backend.WaveformStorage(
+                                expected_array_length=1200,
+                                net="JK",
+                                sta=str(id),
+                                loc="01",
+                                seed_code=code,
+                                ncomps=3,
+                                phase=phase,
+                                wf_source_id=wf_source1.id,
+                            )
+                            wf_storages[f"{id}.{code}.{phase}.{wf_source1.id}"] = (
+                                wf_storage
+                            )
 
-        ids["p_pick1"] = p1.id
-        ids["s_pick1"] = s1.id
-        ids["wf_source1"] = wf_source1.id
+                    ### Insert waveform infos ###
 
-        try:
-            # Open waveform storages
-            wf_storages = {}
-            for code in ["HHZ", "HHE", "HHN"]:
-                for phase in ["P", "S"]:
-                    wf_storage = pytables_backend.WaveformStorage(
-                        expected_array_length=1200,
-                        net="JK",
-                        sta=str(id),
-                        loc="01",
-                        seed_code=code,
-                        ncomps=3,
-                        phase=phase,
-                        wf_source_id=wf_source1.id,
+                    def insert_wf_info(
+                        phase,
+                        pick,
+                        chan_code,
+                        wf_source,
+                        data,
+                        start_ind=None,
+                        end_ind=None,
+                    ):
+                        _ = services.insert_waveform_pytable(
+                            db_session,
+                            wf_storages[
+                                f"{pick.sta_id}.{chan_code}.{phase}.{wf_source.id}"
+                            ],
+                            all_channel_dict[f"{pick.sta_id}.{chan_code}"].id,
+                            pick.id,
+                            wf_source.id,
+                            start=pick.ptime - timedelta(seconds=0.5),
+                            end=pick.ptime + timedelta(seconds=0.5),
+                            data=data,
+                            signal_start_ind=start_ind,
+                            signal_end_ind=end_ind,
+                        )
+
+                    # TODO: I should load the examples from Ben...
+
+                    p_data = np.loadtxt(
+                        f"{examples_dir}/ben_data/pickers/cnnOneComponentP/uu.gzu.ehz.01.txt",
+                        delimiter=",",
                     )
-                    wf_storages[f"{id}.{code}.{phase}.{wf_source1.id}"] = wf_storage
+                    p_data = np.concatenate(
+                        [np.zeros((400,)), p_data[:, 1], np.zeros((400,))]
+                    )
+                    assert p_data.shape == (1200,)
+                    # Info for P Pick 1
+                    for i, code in enumerate(["HHE", "HHN"]):
+                        insert_wf_info("P", p1, code, wf_source1, np.zeros(1200))
+                    insert_wf_info("P", p1, "HHZ", wf_source1, p_data)
 
-            ### Insert waveform infos ###
+                    s_data = np.loadtxt(
+                        f"{examples_dir}/ben_data/pickers/cnnThreeComponentS/uu.gzu.eh.zne.01.txt",
+                        delimiter=",",
+                    )
+                    s_data = np.concatenate(
+                        [np.zeros((300, 3)), s_data[:, 1:], np.zeros((300, 3))]
+                    )
+                    assert s_data.shape == (1200, 3)
+                    # Info for S Pick 1
+                    for i, code in enumerate(["HHZ", "HHN", "HHE"]):
+                        insert_wf_info("S", s1, code, wf_source1, s_data[:, i])
 
-            def insert_wf_info(
-                phase, pick, chan_code, wf_source, data, start_ind=None, end_ind=None
-            ):
-                _ = services.insert_waveform_pytable(
-                    db_session,
-                    wf_storages[f"{pick.sta_id}.{chan_code}.{phase}.{wf_source.id}"],
-                    all_channel_dict[f"{pick.sta_id}.{chan_code}"].id,
-                    pick.id,
-                    wf_source.id,
-                    start=pick.ptime - timedelta(seconds=0.5),
-                    end=pick.ptime + timedelta(seconds=0.5),
-                    data=data,
-                    signal_start_ind=start_ind,
-                    signal_end_ind=end_ind,
-                )
-
-            # TODO: I should load the examples from Ben...
-
-            p_data = np.loadtxt(
-                f"{examples_dir}/ben_data/pickers/cnnOneComponentP/uu.gzu.ehz.01.txt",
-                delimiter=",",
-            )
-            p_data = np.concatenate([np.zeros((400,)), p_data[:, 1], np.zeros((400,))])
-            assert p_data.shape == (1200,)
-            # Info for P Pick 1
-            for i, code in enumerate(["HHE", "HHN"]):
-                insert_wf_info("P", p1, code, wf_source1, np.zeros(1200))
-            insert_wf_info("P", p1, "HHZ", wf_source1, p_data)
-
-            s_data = np.loadtxt(
-                f"{examples_dir}/ben_data/pickers/cnnThreeComponentS/uu.gzu.eh.zne.01.txt",
-                delimiter=",",
-            )
-            s_data = np.concatenate(
-                [np.zeros((300, 3)), s_data[:, 1:], np.zeros((300, 3))]
-            )
-            assert s_data.shape == (1200, 3)
-            # Info for S Pick 1
-            for i, code in enumerate(["HHZ", "HHN", "HHE"]):
-                insert_wf_info("S", s1, code, wf_source1, s_data[:, i])
-
-            db_session.commit()
-        finally:
-            for _, wf_storage in wf_storages.items():
-                wf_storage.commit()
-                if wf_storage._is_open:
-                    wf_storage.close()
-        return db_session, ids
+                    db_session.commit()
+                finally:
+                    for _, wf_storage in wf_storages.items():
+                        wf_storage.commit()
+                        if wf_storage._is_open:
+                            wf_storage.close()
+        return session_factory, ids
 
     @pytest.fixture
     def p_ex_paths(self):
@@ -3113,24 +3216,28 @@ class TestMultiSWAGPickerDB:
             },
         }
 
-        session, ids = db_session_with_waveform_info  # Unpack session & patch function
-        sp.start_db_conn(repicker_dict, cal_dict, session_factory=lambda: session)
+        session_factory, ids = (
+            db_session_with_waveform_info  # Unpack session & patch function
+        )
+        sp.start_db_conn(repicker_dict, cal_dict, session_factory=session_factory)
 
-        return session, sp, ids
+        return session_factory, sp, ids
 
     @pytest.fixture
     def s_picker_with_db_conn(
         self, init_s_picker, db_session_with_waveform_info, method_dicts_ex
     ):
         sp = init_s_picker
-        session, ids = db_session_with_waveform_info  # Unpack session & patch function
+        session_factory, ids = (
+            db_session_with_waveform_info  # Unpack session & patch function
+        )
         repicker_dict, cal_dict = method_dicts_ex
-        sp.start_db_conn(repicker_dict, cal_dict, session_factory=lambda: session)
+        sp.start_db_conn(repicker_dict, cal_dict, session_factory=session_factory)
 
-        return session, sp, ids
+        return session_factory, sp, ids
 
     def test_start_db_conn(self, p_picker_with_db_conn):
-        session, sp, _ = p_picker_with_db_conn
+        session_factory, sp, _ = p_picker_with_db_conn
         assert sp.db_conn is not None, "db connection not set"
         assert sp.db_conn.phase == "P", "phase type is not set correctly in db conn"
         assert (
@@ -3142,26 +3249,27 @@ class TestMultiSWAGPickerDB:
         assert sp.cal_loc_type == "trim_median"
         assert sp.cal_scale_type == "trim_std"
 
-        rp_meth = session.get(tables.RepickerMethod, sp.db_conn.repicker_method_id)
-        assert rp_meth.n_comps == 1
-        assert rp_meth.wf_proc_fn_name == "process_1c_P"
-        assert rp_meth.n_models == 3
-        assert rp_meth.n_evals_per_model == 40
-        assert rp_meth.wf_sample_dur == 400
-        assert rp_meth.wf_proc_pad == 100
-        rp_model_settings = rp_meth.model_settings
-        assert rp_model_settings["cov_mat"] == True
-        assert rp_model_settings["K"] == 20
-        assert rp_model_settings["seeds"] == [1, 2, 3]
-        assert rp_model_settings["swag_model1"] == "m1.pt"
-        assert rp_model_settings["swag_model2"] == "m2.pt"
-        assert rp_model_settings["swag_model3"] == "m3.pt"
-        assert rp_model_settings["train_path"] == "path/to/train"
-        assert rp_model_settings["train_file"] == "train.h5"
-        assert rp_model_settings["shuffle_train"] == False
+        with session_factory() as session:
+            rp_meth = session.get(tables.RepickerMethod, sp.db_conn.repicker_method_id)
+            assert rp_meth.n_comps == 1
+            assert rp_meth.wf_proc_fn_name == "process_1c_P"
+            assert rp_meth.n_models == 3
+            assert rp_meth.n_evals_per_model == 40
+            assert rp_meth.wf_sample_dur == 400
+            assert rp_meth.wf_proc_pad == 100
+            rp_model_settings = rp_meth.model_settings
+            assert rp_model_settings["cov_mat"] == True
+            assert rp_model_settings["K"] == 20
+            assert rp_model_settings["seeds"] == [1, 2, 3]
+            assert rp_model_settings["swag_model1"] == "m1.pt"
+            assert rp_model_settings["swag_model2"] == "m2.pt"
+            assert rp_model_settings["swag_model3"] == "m3.pt"
+            assert rp_model_settings["train_path"] == "path/to/train"
+            assert rp_model_settings["train_file"] == "train.h5"
+            assert rp_model_settings["shuffle_train"] == False
 
     def test_torch_loader_from_db_P(self, p_picker_with_db_conn):
-        session, sp, init_ids = p_picker_with_db_conn
+        session_factory, sp, init_ids = p_picker_with_db_conn
         returned_ids, loader = sp.torch_loader_from_db(
             400,
             1,
@@ -3183,7 +3291,7 @@ class TestMultiSWAGPickerDB:
         assert np.allclose(ref_proc_data[:, 1], returned_data, 1e-2)
 
     def test_torch_loader_from_db_S(self, s_picker_with_db_conn):
-        session, sp, init_ids = s_picker_with_db_conn
+        session_factory, sp, init_ids = s_picker_with_db_conn
         returned_ids, loader = sp.torch_loader_from_db(
             600,
             1,
@@ -3210,7 +3318,7 @@ class TestMultiSWAGPickerDB:
         assert np.allclose(ref_proc_data[:, 2], returned_data[2, :], 1e-2)
 
     def test_calibrate_and_save(self, p_picker_with_db_conn, mock_pytables_config):
-        session, sp, init_ids = p_picker_with_db_conn
+        session_factory, sp, init_ids = p_picker_with_db_conn
         pick_source_ids = [
             {"pick_id": init_ids["p_pick1"], "wf_source_id": init_ids["wf_source1"]}
         ]
@@ -3254,9 +3362,7 @@ class TestMultiSWAGPickerDB:
         assert (
             inserted_corr[0].if_high == trim_results["if_high"][0]
         ), "incorrect if_high"
-        expected_pytable_file = (
-            f"repicker{sp.db_conn.repicker_method_id:02d}_P_2010-02-01_2010-02-02_N120.h5"
-        )
+        expected_pytable_file = f"repicker{sp.db_conn.repicker_method_id:02d}_P_2010-02-01_2010-02-02_N120.h5"
         assert inserted_corr[0].preds_hdf_file.name == expected_pytable_file
         cis = inserted_corr[0].cis
         assert len(cis) == 2, "incorrect number of credible intervals"

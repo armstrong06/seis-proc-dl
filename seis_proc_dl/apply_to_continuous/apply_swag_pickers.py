@@ -375,22 +375,26 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
         repicker_params["n_comps"] = 3 if self.threeC_waveforms else 1
         repicker_params["wf_proc_fn_name"] = self.proc_fn.__name__
 
-        # Get/set repicker method
-        self.db_conn.add_repicker_method(
-            repicker_dict["name"],
-            repicker_dict["desc"],
-            self.swag_model_dir,
-            addition_params_dict=repicker_params
-        )
+        with self.db_conn.Session() as session:
+            with session.begin():
+                # Get/set repicker method
+                self.db_conn.add_repicker_method(
+                    session,
+                    repicker_dict["name"],
+                    repicker_dict["desc"],
+                    self.swag_model_dir,
+                    addition_params_dict=repicker_params,
+                )
 
-        # Get/set calibration method
-        self.db_conn.add_calibration_method(
-            cal_dict["name"],
-            cal_dict["desc"],
-            self.cal_model_file,
-            loc_type=cal_loc_type,
-            scale_type=cal_scale_type,
-        )
+                # Get/set calibration method
+                self.db_conn.add_calibration_method(
+                    session,
+                    cal_dict["name"],
+                    cal_dict["desc"],
+                    self.cal_model_file,
+                    loc_type=cal_loc_type,
+                    scale_type=cal_scale_type,
+                )
 
         self.cal_loc_type = cal_loc_type
         self.cal_scale_type = cal_scale_type
@@ -409,19 +413,23 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
 
         proc_fn = self.proc_fn
         if no_proc:
-            logger.warning("Turning the waveform processing function off. The RepickerMethod.wf_proc_fn_name will be incorrect!")
+            logger.warning(
+                "Turning the waveform processing function off. The RepickerMethod.wf_proc_fn_name will be incorrect!"
+            )
             proc_fn = None
 
-        ids, X = self.db_conn.get_waveforms(
-            n_samples=n_samples,
-            threeC_waveforms=self.threeC_waveforms,
-            proc_fn=proc_fn,
-            start=start_date,
-            end=end_date,
-            wf_source_list=wf_source_list,
-            padding=padding,
-            on_event=logger.info,
-        )
+        with self.db_conn.Session() as session:
+            ids, X = self.db_conn.get_waveforms(
+                session,
+                n_samples=n_samples,
+                threeC_waveforms=self.threeC_waveforms,
+                proc_fn=proc_fn,
+                start=start_date,
+                end=end_date,
+                wf_source_list=wf_source_list,
+                padding=padding,
+                on_event=logger.info,
+            )
 
         dset = Dset(X)
         loader = torch.utils.data.DataLoader(
@@ -473,15 +481,19 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
         logger.debug(f"Total time calibrating and computing stats: {t1-t0:0.2f} s")
 
         t0 = time.time()
-        self.db_conn.save_corrections(
-            pick_source_ids,
-            ensemble_outputs,
-            summary_stats,
-            calibration_results,
-            start_date,
-            end_date,
-            on_event=logger.debug,
-        )
+
+        with self.db_conn.Session() as session:
+            with session.begin():
+                self.db_conn.save_corrections(
+                    session,
+                    pick_source_ids,
+                    ensemble_outputs,
+                    summary_stats,
+                    calibration_results,
+                    start_date,
+                    end_date,
+                    on_event=logger.debug,
+                )
         t1 = time.time()
         logger.debug(f"Total time saving corrections: {t1-t0:0.2f} s")
 

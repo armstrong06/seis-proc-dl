@@ -156,13 +156,9 @@ class DetectorDBConnection:
             session, name, phase=phase, details=desc, path=path
         )
         if phase == "P":
-            self.p_detection_method_id = services.get_detection_method(
-                session, name
-            ).id
+            self.p_detection_method_id = services.get_detection_method(session, name).id
         elif phase == "S":
-            self.s_detection_method_id = services.get_detection_method(
-                session, name
-            ).id
+            self.s_detection_method_id = services.get_detection_method(session, name).id
         else:
             raise ValueError("Invalid Phase for Detection Method")
 
@@ -237,7 +233,6 @@ class DetectorDBConnection:
         elif not started_new_day:
             raise ValueError(f"Cannot start processing {date}, no channel info exists")
 
-
         db_dict = {
             "sta_id": self.station_id,
             "chan_pref": self.seed_code,
@@ -254,9 +249,7 @@ class DetectorDBConnection:
                 "orig_start": metadata_dict["original_starttime"],
                 "orig_end": metadata_dict["original_endtime"],
                 "proc_npts": metadata_dict["npts"] if error is None else None,
-                "proc_start": (
-                    metadata_dict["starttime"] if error is None else None
-                ),
+                "proc_start": (metadata_dict["starttime"] if error is None else None),
                 "proc_end": None,  # just get this from proc_start, samp_rate, and proc_npts
                 "prev_appended": metadata_dict["previous_appended"],
             }
@@ -270,7 +263,9 @@ class DetectorDBConnection:
             session.flush()
         elif metadata_dict is None:
             if contdatainfo.error != db_dict["error"]:
-                info_str = f"{db_dict['sta_id']}, {db_dict['chan_pref']}, {db_dict['date']}"
+                info_str = (
+                    f"{db_dict['sta_id']}, {db_dict['chan_pref']}, {db_dict['date']}"
+                )
                 raise ValueError(
                     f"DailyContDataInfo {info_str} row already exists but the error when loading has changed"
                 )
@@ -288,7 +283,9 @@ class DetectorDBConnection:
                 or contdatainfo.prev_appended != db_dict["prev_appended"]
                 or contdatainfo.error != db_dict["error"]
             ):
-                info_str = f"{db_dict['sta_id']}, {db_dict['chan_pref']}, {db_dict['date']}"
+                info_str = (
+                    f"{db_dict['sta_id']}, {db_dict['chan_pref']}, {db_dict['date']}"
+                )
                 raise ValueError(
                     f"DailyContDataInfo {info_str} row already exists but the values have changed"
                 )
@@ -380,7 +377,9 @@ class DetectorDBConnection:
             d["detout"] = self.daily_info.dldet_output_id_S
         return d
 
-    def save_P_post_probs(self, session, data, expected_array_length=8640000, on_event=None):
+    def save_P_post_probs(
+        self, session, data, expected_array_length=8640000, on_event=None
+    ):
         if self.detout_storage_P is None:
             self.detout_storage_P = self._open_dldetection_output_storage(
                 expected_array_length=expected_array_length,
@@ -401,7 +400,9 @@ class DetectorDBConnection:
         )
         self.daily_info.dldet_output_id_P = detout_id
 
-    def save_S_post_probs(self, session, data, expected_array_length=8640000, on_event=None):
+    def save_S_post_probs(
+        self, session, data, expected_array_length=8640000, on_event=None
+    ):
         if self.detout_storage_S is None:
             self.detout_storage_S = self._open_dldetection_output_storage(
                 expected_array_length=expected_array_length,
@@ -415,8 +416,7 @@ class DetectorDBConnection:
             data = np.concatenate([data, tmp])
 
         detout_id = self._save_detection_output(
-            session,
-            self.detout_storage_S, data, self.s_detection_method_id
+            session, self.detout_storage_S, data, self.s_detection_method_id
         )
         self.daily_info.dldet_output_id_S = detout_id
 
@@ -479,12 +479,16 @@ class DetectorDBConnection:
 
                 prev_storage = curr_storage
                 curr_storage = None
-            
+
             new_storage = {}
             for seed_code, chan_id in self.channel_info.channel_ids.items():
                 # TODO: implement this function
                 storage_number, hdf_file, count = services.get_waveform_storage_number(
-                    session, chan_id, self.wf_source_id, phase, self.MAX_WAVEFORMS_PER_STORAGE
+                    session,
+                    chan_id,
+                    self.wf_source_id,
+                    phase,
+                    self.MAX_WAVEFORMS_PER_STORAGE,
                 )
                 new_storage[chan_id] = pytables_backend.WaveformStorage(
                     expected_array_length=common_wf_details["expected_array_length"],
@@ -554,7 +558,6 @@ class DetectorDBConnection:
         }
         storage_dict = None
 
-
         # Get ids
         data_id = self.daily_info.contdatainfo_id
         if is_p:
@@ -565,7 +568,7 @@ class DetectorDBConnection:
             phase = "S"
         # Compute the number of samples to grab on either side of the detection
         cdi = session.get(DailyContDataInfo, data_id)
-        cdi_date = cdi.date 
+        cdi_date = cdi.date
         cdi_prev_appended = cdi.prev_appended
         samples_around_pick = int(seconds_around_pick * cdi.samp_rate)
         total_npts = len(continuous_data)
@@ -641,21 +644,19 @@ class DetectorDBConnection:
             #####
             for det_dict in proc_dldets:
                 # Check if the detection is on the previous day, if so need to check
-                # for existing picks and handle accordingly 
+                # for existing picks and handle accordingly
                 insert_new_pick = True
                 if det_dict["det_time"].date() < cdi_date:
                     assert (
                         cdi_prev_appended
                     ), "Previous data was not appended, yet there is a detection on the previous day..."
 
-                    insert_new_pick = (
-                        self._potentially_modify_pick_and_waveform(
-                            session,
-                            storage_dict, 
-                            prev_storage_dict,
-                            det_dict,
-                            common_wf_details,
-                        )
+                    insert_new_pick = self._potentially_modify_pick_and_waveform(
+                        session,
+                        storage_dict,
+                        prev_storage_dict,
+                        det_dict,
+                        common_wf_details,
                     )
 
                 if insert_new_pick:
@@ -682,7 +683,7 @@ class DetectorDBConnection:
                         self.n_P_waveform_storage_entries += 1
                     else:
                         self.n_S_waveform_storage_entries += 1
-                        
+
         except Exception as e:
             if use_pytables and storage_dict is not None:
                 # Rollback the pytables updates if an error occurs
@@ -750,13 +751,13 @@ class DetectorDBConnection:
                 )
 
     def _potentially_modify_pick_and_waveform(
-            self,
-            session,
-            storage_dict,
-            prev_storage_dict,
-            pick_waveform_details,
-            common_waveform_details,
-        ):
+        self,
+        session,
+        storage_dict,
+        prev_storage_dict,
+        pick_waveform_details,
+        common_waveform_details,
+    ):
         new_pick_needed = True
         # Check if there are any picks with a ptime close to det.time
         close_picks = services.get_picks(
@@ -827,16 +828,24 @@ class DetectorDBConnection:
                 wf_end_ind = pick_waveform_details["wf_end_ind"]
                 wf_data[wf_start_ind:wf_end_ind] = pick_cont_data[:, chan_ind]
                 # Modify the pytable entry
-                if wf.chan_id in storage_dict.keys() and storage_dict[wf.chan_id].file_name == wf.hdf_file.name:
+                if (
+                    wf.chan_id in storage_dict.keys()
+                    and storage_dict[wf.chan_id].file_name == wf.hdf_file.name
+                ):
                     storage_dict[wf.chan_id].modify(
                         wf.id, wf_data, wf_start_ind, wf_end_ind
                     )
-                elif prev_storage_dict is not None and wf.chan_id in prev_storage_dict.keys():
+                elif (
+                    prev_storage_dict is not None
+                    and wf.chan_id in prev_storage_dict.keys()
+                ):
                     prev_storage_dict[wf.chan_id].modify(
                         wf.id, wf_data, wf_start_ind, wf_end_ind
                     )
                 else:
-                    raise ValueError("wf.chan_id not in the previous or current storage dict")
+                    raise ValueError(
+                        "wf.chan_id not in the previous or current storage dict"
+                    )
             # TODO: Might want to update this in case the channel switched between days...
             # But I think it makes sense to still assign it to the previous day's channel
             # wf.chan_id = self.channel_info.channel_ids[seed_code]
@@ -868,7 +877,7 @@ class DetectorDBConnection:
             for key, stor in self.prev_waveform_storage_dict_S.items():
                 stor.close()
             self.prev_waveform_storage_dict_S = None
-            
+
 
 class SwagPickerDBConnection:
 
@@ -879,35 +888,35 @@ class SwagPickerDBConnection:
         self.repicker_method_id = None
         self.calibration_method_id = None
 
-    def add_repicker_method(self, name, desc, path, addition_params_dict={}):
+    def add_repicker_method(self, session, name, desc, path, addition_params_dict={}):
         """Add a repicker method to the database. If it already exists, update it."""
-        with self.Session() as session:
-            with session.begin():
-                services.upsert_repicker_method(
-                    session, name, phase=self.phase, details=desc, path=path,
-                    **addition_params_dict
-                )
-                self.repicker_method_id = services.get_repicker_method(session, name).id
+        services.upsert_repicker_method(
+            session,
+            name,
+            phase=self.phase,
+            details=desc,
+            path=path,
+            **addition_params_dict,
+        )
+        self.repicker_method_id = services.get_repicker_method(session, name).id
 
-    def add_calibration_method(self, name, desc, path, loc_type, scale_type):
+    def add_calibration_method(self, session, name, desc, path, loc_type, scale_type):
         """Add a calibration method to the database. If it already exists, update it."""
-        with self.Session() as session:
-            with session.begin():
-                services.upsert_calibration_method(
-                    session,
-                    name,
-                    phase=self.phase,
-                    details=desc,
-                    path=path,
-                    loc_type=loc_type,
-                    scale_type=scale_type,
-                )
-                self.calibration_method_id = services.get_calibration_method(
-                    session, name
-                ).id
+
+        services.upsert_calibration_method(
+            session,
+            name,
+            phase=self.phase,
+            details=desc,
+            path=path,
+            loc_type=loc_type,
+            scale_type=scale_type,
+        )
+        self.calibration_method_id = services.get_calibration_method(session, name).id
 
     def get_waveforms(
         self,
+        session,
         n_samples,
         threeC_waveforms,
         proc_fn,
@@ -917,25 +926,24 @@ class SwagPickerDBConnection:
         padding,
         on_event=None,
     ):
-        with self.Session() as session:
-            with session.begin():
-                return services.Waveforms().gather_waveforms(
-                    session,
-                    n_samples=n_samples,
-                    threeC_waveforms=threeC_waveforms,
-                    channel_index_mapping_fn=get_channel_data_index,
-                    wf_process_fn=proc_fn,
-                    phase=self.phase,
-                    start=start,
-                    end=end,
-                    sources=wf_source_list,
-                    include_multiple_wf_sources=False,
-                    pad_samples=padding,
-                    on_event=on_event,
-                )
+        return services.Waveforms().gather_waveforms(
+            session,
+            n_samples=n_samples,
+            threeC_waveforms=threeC_waveforms,
+            channel_index_mapping_fn=get_channel_data_index,
+            wf_process_fn=proc_fn,
+            phase=self.phase,
+            start=start,
+            end=end,
+            sources=wf_source_list,
+            include_multiple_wf_sources=False,
+            pad_samples=padding,
+            on_event=on_event,
+        )
 
     def save_corrections(
         self,
+        session,
         all_ids,
         ensemble_outputs,
         summary_stats,
@@ -951,45 +959,43 @@ class SwagPickerDBConnection:
             n_picks, n_wfs, start_date, end_date, on_event
         )
 
-        with self.Session() as session:
-            with session.begin():
-                try:
-                    storage.start_transaction()
-                    # Iterate over the picks
-                    for i in np.arange(0, n_wfs):
-                        i_ids = all_ids[i]
-                        # Save the prediction results
-                        corr = services.insert_pick_correction_pytable(
-                            session=session,
-                            storage=storage,
-                            pick_id=i_ids["pick_id"],
-                            method_id=self.repicker_method_id,
-                            wf_source_id=i_ids["wf_source_id"],
-                            median=summary_stats["median"][i],
-                            mean=summary_stats["mean"][i],
-                            std=summary_stats["std"][i],
-                            if_low=summary_stats["if_low"][i],
-                            if_high=summary_stats["if_high"][i],
-                            trim_median=summary_stats["trim_median"][i],
-                            trim_mean=summary_stats["trim_mean"][i],
-                            trim_std=summary_stats["trim_std"][i],
-                            predictions=ensemble_outputs[i],
-                        )
-                        for perc in cal_results.keys():
-                            # Add the CI information
-                            _ = services.insert_ci(
-                                session,
-                                corr_id=corr.id,
-                                method_id=self.calibration_method_id,
-                                percent=perc,
-                                lb=cal_results[perc]["arrivalTimeShiftLowerBound"][i],
-                                ub=cal_results[perc]["arrivalTimeShiftUpperBound"][i],
-                            )
+        try:
+            storage.start_transaction()
+            # Iterate over the picks
+            for i in np.arange(0, n_wfs):
+                i_ids = all_ids[i]
+                # Save the prediction results
+                corr = services.insert_pick_correction_pytable(
+                    session=session,
+                    storage=storage,
+                    pick_id=i_ids["pick_id"],
+                    method_id=self.repicker_method_id,
+                    wf_source_id=i_ids["wf_source_id"],
+                    median=summary_stats["median"][i],
+                    mean=summary_stats["mean"][i],
+                    std=summary_stats["std"][i],
+                    if_low=summary_stats["if_low"][i],
+                    if_high=summary_stats["if_high"][i],
+                    trim_median=summary_stats["trim_median"][i],
+                    trim_mean=summary_stats["trim_mean"][i],
+                    trim_std=summary_stats["trim_std"][i],
+                    predictions=ensemble_outputs[i],
+                )
+                for perc in cal_results.keys():
+                    # Add the CI information
+                    _ = services.insert_ci(
+                        session,
+                        corr_id=corr.id,
+                        method_id=self.calibration_method_id,
+                        percent=perc,
+                        lb=cal_results[perc]["arrivalTimeShiftLowerBound"][i],
+                        ub=cal_results[perc]["arrivalTimeShiftUpperBound"][i],
+                    )
 
-                except Exception as e:
-                    storage.rollback()
-                    storage.close()
-                    raise e
+        except Exception as e:
+            storage.rollback()
+            storage.close()
+            raise e
 
         storage.commit()
 
