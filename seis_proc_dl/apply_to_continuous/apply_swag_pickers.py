@@ -8,6 +8,7 @@ import sys
 import time
 import logging
 from abc import ABC
+from sqlalchemy import text
 from seis_proc_dl.apply_to_continuous.database_connector import SwagPickerDBConnection
 
 sys.path.append(
@@ -484,8 +485,7 @@ class MultiSWAGPickerDB(BaseMultiSWAGPicker):
 
         with self.db_conn.Session() as session:
             with session.begin():
-                session.execute("SET innodb_lock_wait_timeout = 120")
-                session.commit()  # not strictly required here, but fine to include
+                session.execute(text("SET innodb_lock_wait_timeout = 120"))
                 self.db_conn.save_corrections(
                     session,
                     pick_source_ids,

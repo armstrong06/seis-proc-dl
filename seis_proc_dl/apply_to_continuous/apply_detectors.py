@@ -383,7 +383,7 @@ class ApplyDetector:
         with self.db_conn.Session() as session:
             with session.begin():
                 # TODO: See if this works
-                # session.execute("SET innodb_lock_wait_timeout = 120")
+                # session.execute(text("SET innodb_lock_wait_timeout = 120"))
                 # session.commit()  # not strictly required here, but fine to include
                 start_data = time.time()
                 # Add row to contdatainfo
