@@ -292,11 +292,18 @@ class DetectorDBConnection:
 
         self.daily_info.contdatainfo_id = contdatainfo.id
 
-    def format_and_save_gaps(self, session, gaps, min_gap_sep_seconds):
+    def save_gaps(self, session, formatted_gaps):
         """Add gaps into the table. If many gaps in the same time period, combine them
         into one 'effective' gap. gaps should be a list of lists containing the gap seed_code, startime and endtime
         """
 
+        if formatted_gaps is None or len(formatted_gaps) == 0:
+            return
+
+        services.insert_gaps(session, formatted_gaps)
+        session.flush()
+
+    def format_gaps(self, gaps, min_gap_sep_seconds):
         if gaps is None or len(gaps) == 0:
             return
 
@@ -316,8 +323,7 @@ class DetectorDBConnection:
             )
             formatted_gaps += chan_gaps
 
-        services.insert_gaps(session, formatted_gaps)
-        session.flush()
+        return formatted_gaps
 
     def format_channel_gaps(self, gaps, chan_id, min_gap_sep_seconds):
         if gaps is None:
@@ -405,7 +411,6 @@ class DetectorDBConnection:
     ):
         if self.detout_storage_S is None:
             self.detout_storage_S = self._open_dldetection_output_storage(
-                session,
                 expected_array_length=expected_array_length,
                 phase="S",
                 det_method_id=self.s_detection_method_id,

@@ -390,19 +390,20 @@ class ApplyDetector:
                 self.db_conn.save_data_info(session, date, metadata, error=error)
                 # Add gaps - gaps can be None if load_channel_data was never called or an empty list if
                 # it was called but no gaps exist
+                formatted_gaps = None
                 if gaps is not None and len(gaps) > 0:
-                    self.db_conn.format_and_save_gaps(
-                        session,
+                    formatted_gaps = self.db_conn.format_gaps(
                         self.dataloader.simplify_gaps(gaps),
                         self.min_gap_sep_seconds,
                     )
-                logger.debug(
-                    f"Time to store contdatainfo and gaps: {time.time() - start_data:0.2f} s"
-                )
+                if formatted_gaps is not None:
+                    self.db_conn.save_gaps(
+                        session,
+                        formatted_gaps,
+                    )
 
                 # P post probs may not exist if there was an error in loading
                 if p_post_probs is not None:
-                    start_dets = time.time()
                     # Only save post prob info in db if using pytables
                     if self.use_pytables:
                         self.db_conn.save_P_post_probs(
@@ -411,18 +412,48 @@ class ApplyDetector:
                             expected_array_length=expected_array_length,
                             on_event=logger.info,
                         )
+
+                # Save S detections
+                if self.ncomps == 3 and s_post_probs is not None:
+                    # Only save post prob info in db if using pytables
+                    if self.use_pytables:
+                        self.db_conn.save_S_post_probs(
+                            session,
+                            s_post_probs,
+                            expected_array_length=expected_array_length,
+                            on_event=logger.debug,
+                        )
+
+                logger.debug(
+                    f"Time to store contdatainfo, gaps, and post_probs: {time.time() - start_data:0.2f} s"
+                )
+        
+        p_dets = None
+        if p_post_probs is not None:
+            p_dets = self.get_detections_from_post_probs(
+                p_post_probs,
+                "P",
+                thresh=self.p_det_thresh,
+                db_ids=self.db_conn.get_dldet_fk_ids(),
+            )
+
+        s_dets = None
+        if self.ncomps == 3 and s_post_probs is not None:
+            s_dets = self.get_detections_from_post_probs(
+                s_post_probs,
+                "S",
+                thresh=self.s_det_thresh,
+                db_ids=self.db_conn.get_dldet_fk_ids(is_p=False),
+            )
+
+        with self.db_conn.Session() as session:
+            with session.begin():
+                if p_dets is not None:
+                    start_dets = time.time()
                     # Save P Detections
-                    self.db_conn.save_detections(
-                        session,
-                        self.get_detections_from_post_probs(
-                            p_post_probs,
-                            "P",
-                            thresh=self.p_det_thresh,
-                            db_ids=self.db_conn.get_dldet_fk_ids(),
-                        ),
-                    )
+                    self.db_conn.save_detections(session, p_dets)
                     logger.debug(
-                        f"Time to process and store P - detections: {time.time() - start_dets:0.2f} s"
+                        f"Time to store P - detections: {time.time() - start_dets:0.2f} s"
                     )
                     start_picks = time.time()
                     self.db_conn.save_picks_from_detections(
@@ -439,28 +470,14 @@ class ApplyDetector:
                         f"Time to store P - picks and waveforms: {time.time() - start_picks:0.2f} s"
                     )
 
-                # Save S detections
-                if self.ncomps == 3 and s_post_probs is not None:
+                if s_dets is not None:
                     start_dets = time.time()
-                    # Only save post prob info in db if using pytables
-                    if self.use_pytables:
-                        self.db_conn.save_S_post_probs(
-                            session,
-                            s_post_probs,
-                            expected_array_length=expected_array_length,
-                            on_event=logger.debug,
-                        )
                     self.db_conn.save_detections(
                         session,
-                        self.get_detections_from_post_probs(
-                            s_post_probs,
-                            "S",
-                            thresh=self.s_det_thresh,
-                            db_ids=self.db_conn.get_dldet_fk_ids(is_p=False),
-                        ),
+                        s_dets,
                     )
                     logger.debug(
-                        f"Time to process and store S - detections: {time.time() - start_dets:0.2f} s"
+                        f"Time to store S - detections: {time.time() - start_dets:0.2f} s"
                     )
                     start_picks = time.time()
                     self.db_conn.save_picks_from_detections(

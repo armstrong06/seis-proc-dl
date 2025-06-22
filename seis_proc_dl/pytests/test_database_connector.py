@@ -635,7 +635,9 @@ class TestDetectorDBConnection:
         session, db_conn = db_session_with_saved_contdatainfo
         gaps = multi_channel_gaps_ex
 
-        db_conn.format_and_save_gaps(session, gaps, 5)
+        formatted_gaps = db_conn.format_gaps(gaps, 5)
+        db_conn.save_gaps(session, formatted_gaps)
+
         gaps_E = services.get_gaps(
             session,
             db_conn.channel_info.channel_ids["HHE"],
@@ -664,7 +666,9 @@ class TestDetectorDBConnection:
         session, db_conn = db_session_with_saved_contdatainfo
         gaps = []
 
-        db_conn.format_and_save_gaps(session, gaps, 5)
+        formatted_gaps = db_conn.format_gaps(gaps, 5)
+        db_conn.save_gaps(session, formatted_gaps)
+
         gaps_E = services.get_gaps(
             session,
             db_conn.channel_info.channel_ids["HHE"],
@@ -685,7 +689,8 @@ class TestDetectorDBConnection:
         session, db_conn = db_session_with_saved_contdatainfo
         gaps = None
 
-        db_conn.format_and_save_gaps(session, gaps, 5)
+        formatted_gaps = db_conn.format_gaps(gaps, 5)
+        db_conn.save_gaps(session, formatted_gaps)
         gaps_E = services.get_gaps(
             session,
             db_conn.channel_info.channel_ids["HHE"],
